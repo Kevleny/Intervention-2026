@@ -1,0 +1,1938 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#080c16">
+<title>TechLab Apps · Dashboard</title>
+
+<!-- ═══════════════════════════════════════════════════════
+     SUPABASE SDK
+════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+window._fbCache = window._fbCache || {};
+
+function keyToTable(key) {
+  const MAP = {
+    'fieldops_interventions': 'interventions',
+    'fieldops_techs':         'techs',
+    'fieldops_sites':         'sites',
+  };
+  return MAP[key] || null;
+}
+
+async function fbLoad(key, def) {
+  if (window._fbCache[key] !== undefined) return window._fbCache[key];
+  try {
+    const table = keyToTable(key);
+    if (table) {
+      const { data, error } = await sb.from(table).select('*');
+      if (error) throw error;
+      const arr = data || [];
+      window._fbCache[key] = arr;
+      return arr.length > 0 ? arr : def;
+    }
+    if (key.startsWith('fieldops_param_')) {
+      const paramKey = 'params_' + key.replace('fieldops_param_', '');
+      const { data, error } = await sb.from('settings').select('value').eq('key', paramKey).single();
+      if (error || !data) return def;
+      window._fbCache[key] = data.value;
+      return data.value;
+    }
+    return def;
+  } catch(e) { return def; }
+}
+
+async function fbSave(key, val) {
+  window._fbCache[key] = val;
+  try {
+    const table = keyToTable(key);
+    if (table) {
+      if (val.length > 0) {
+        const { error } = await sb.from(table).upsert(val);
+        if (error) throw error;
+      }
+      const { data: existing } = await sb.from(table).select('id');
+      const toDelete = (existing || []).map(r => r.id).filter(id => !val.find(i => i.id === id));
+      if (toDelete.length > 0) await sb.from(table).delete().in('id', toDelete);
+    } else if (key.startsWith('fieldops_param_')) {
+      const paramKey = 'params_' + key.replace('fieldops_param_', '');
+      await sb.from('settings').upsert({ key: paramKey, value: val });
+    }
+  } catch(e) { console.warn('fbSave:', e); }
+}
+
+function setupSync() {
+  sb.channel('interventions-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, async () => {
+      const { data } = await sb.from('interventions').select('*');
+      const arr = data || [];
+      window._fbCache['fieldops_interventions'] = arr;
+      interventions = arr;
+      const active = document.querySelector('.nav-item.active')?.dataset?.view;
+      if (active === 'today') renderToday();
+      else if (active === 'list') applyFilter();
+      else if (active === 'stats') renderStats();
+      updateSidebarBadges();
+    })
+    .subscribe();
+
+  sb.channel('techs-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, async () => {
+      const { data } = await sb.from('techs').select('*');
+      window._fbCache['fieldops_techs'] = data || []; techs = data || [];
+    })
+    .subscribe();
+
+  sb.channel('sites-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sites' }, async () => {
+      const { data } = await sb.from('sites').select('*');
+      window._fbCache['fieldops_sites'] = data || []; sites = data || [];
+    })
+    .subscribe();
+}
+
+window.fbLoad = fbLoad;
+window.fbSave = fbSave;
+
+async function bootstrap() {
+  const loader = document.getElementById('loader');
+  try {
+    window._fbCache['fieldops_techs']         = await fbLoad('fieldops_techs', []);
+    window._fbCache['fieldops_sites']         = await fbLoad('fieldops_sites', []);
+    window._fbCache['fieldops_interventions'] = await fbLoad('fieldops_interventions', []);
+    const l = document.getElementById('loader');
+    if (l) { l.classList.add('done'); setTimeout(() => l.remove(), 400); }
+    window._fbReady = true;
+    document.dispatchEvent(new CustomEvent('firebase-ready'));
+    setupSync();
+  } catch(e) {
+    const l = document.getElementById('loader');
+    if (l) l.innerHTML = '<div style="color:#f44336;font-size:14px;text-align:center;padding:20px">Erreur Supabase<br><small>' + e.message + '</small></div>';
+  }
+}
+document.addEventListener('DOMContentLoaded', bootstrap);
+</script>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<style>
+/* ══════════════════════════════════════════════════
+   DESIGN TOKENS
+══════════════════════════════════════════════════ */
+:root {
+  --bg-deep:    #060a14;
+  --bg:         #0a0f1c;
+  --bg2:        #0f1629;
+  --bg3:        #151d35;
+  --bg4:        #1c2744;
+  --bg-hover:   #1a2340;
+  --border:     #1a2440;
+  --border-light:#243050;
+  --accent:     #00d4ff;
+  --accent-dim: rgba(0,212,255,0.08);
+  --accent-mid: rgba(0,212,255,0.15);
+  --green:      #00e676;
+  --green-dim:  rgba(0,230,118,0.08);
+  --orange:     #ff9800;
+  --orange-dim: rgba(255,152,0,0.08);
+  --red:        #f44336;
+  --red-dim:    rgba(244,67,54,0.08);
+  --purple:     #7c4dff;
+  --purple-dim: rgba(124,77,255,0.08);
+  --yellow:     #ffd600;
+  --pink:       #ff4081;
+  --text:       #e2e8f4;
+  --text2:      #8b9ab8;
+  --text3:      #4a5a73;
+  --sidebar-w:  260px;
+  --topbar-h:   60px;
+  --radius:     10px;
+  --radius-lg:  14px;
+  --shadow:     0 4px 24px rgba(0,0,0,0.3);
+  --shadow-sm:  0 2px 8px rgba(0,0,0,0.2);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; width: 100%;
+  background: var(--bg-deep);
+  color: var(--text);
+  font-family: 'DM Sans', sans-serif;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ══════════════════════════════════════════════════
+   LOADER
+══════════════════════════════════════════════════ */
+#loader {
+  position: fixed; inset: 0; z-index: 9999;
+  background: var(--bg-deep);
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 16px;
+  transition: opacity 0.4s;
+}
+#loader.done { opacity: 0; pointer-events: none; }
+.loader-logo {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 24px; font-weight: 700; color: var(--accent);
+  letter-spacing: 2px;
+}
+.loader-bar {
+  width: 160px; height: 3px; background: var(--bg3);
+  border-radius: 2px; overflow: hidden;
+}
+.loader-bar-inner {
+  height: 100%; width: 40%; background: linear-gradient(90deg, var(--accent), var(--purple));
+  border-radius: 2px;
+  animation: loader-slide 1.2s ease-in-out infinite;
+}
+@keyframes loader-slide {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+/* ══════════════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════════════ */
+#shell {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+}
+
+/* ══════════════════════════════════════════════════
+   SIDEBAR
+══════════════════════════════════════════════════ */
+#sidebar {
+  width: var(--sidebar-w);
+  min-width: var(--sidebar-w);
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  z-index: 20;
+  position: relative;
+}
+.sidebar-brand {
+  padding: 20px 22px 18px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.brand-hex {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; font-weight: 700; color: #fff;
+  box-shadow: 0 4px 16px rgba(0,212,255,0.25);
+}
+.brand-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px; font-weight: 700; color: var(--text);
+  letter-spacing: 1px;
+}
+.brand-sub {
+  font-size: 10px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 1.5px;
+  margin-top: 1px;
+}
+
+.sidebar-nav {
+  flex: 1;
+  padding: 14px 12px;
+  overflow-y: auto;
+}
+.nav-section-title {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1.5px;
+  color: var(--text3);
+  padding: 12px 12px 8px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px; border-radius: var(--radius);
+  cursor: pointer; transition: all 0.15s;
+  color: var(--text2); font-size: 13.5px; font-weight: 500;
+  position: relative; margin-bottom: 2px;
+  border: 1px solid transparent;
+}
+.nav-item:hover { background: var(--bg-hover); color: var(--text); }
+.nav-item.active {
+  background: var(--accent-dim);
+  border-color: rgba(0,212,255,0.12);
+  color: var(--accent); font-weight: 600;
+}
+.nav-item .ni-icon {
+  width: 20px; text-align: center; font-size: 15px; flex-shrink: 0;
+}
+.nav-item .ni-badge {
+  margin-left: auto;
+  background: var(--red);
+  color: #fff; font-size: 10px; font-weight: 700;
+  min-width: 20px; height: 20px; border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 6px;
+}
+.nav-item .ni-badge.accent {
+  background: var(--accent-mid); color: var(--accent);
+}
+
+.sidebar-footer {
+  padding: 14px 16px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-user {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: var(--radius);
+  cursor: pointer; transition: background 0.15s;
+}
+.sidebar-user:hover { background: var(--bg-hover); }
+.sidebar-user-avatar {
+  width: 34px; height: 34px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.sidebar-user-info { flex: 1; min-width: 0; }
+.sidebar-user-name {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sidebar-user-role {
+  font-size: 10px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+
+/* ══════════════════════════════════════════════════
+   MAIN CONTENT
+══════════════════════════════════════════════════ */
+#main {
+  flex: 1; display: flex; flex-direction: column;
+  min-width: 0; overflow: hidden;
+}
+
+/* Topbar */
+#topbar {
+  height: var(--topbar-h); min-height: var(--topbar-h);
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 28px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+}
+#topbar-title {
+  font-size: 18px; font-weight: 700; color: var(--text); flex: 1;
+}
+.topbar-search {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: 8px; padding: 8px 14px; width: 280px;
+  transition: border-color 0.15s;
+}
+.topbar-search:focus-within { border-color: var(--accent); }
+.topbar-search input {
+  background: none; border: none; color: var(--text);
+  font-family: 'DM Sans', sans-serif; font-size: 13px;
+  outline: none; width: 100%;
+}
+.topbar-search input::placeholder { color: var(--text3); }
+.topbar-search .ts-icon { color: var(--text3); font-size: 14px; flex-shrink: 0; }
+
+.topbar-btn {
+  width: 38px; height: 38px; border-radius: 9px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.15s;
+}
+.topbar-btn:hover { background: var(--bg4); color: var(--text); border-color: var(--border-light); }
+.topbar-btn.primary {
+  background: var(--accent); border-color: var(--accent);
+  color: #080c16; font-weight: 700;
+}
+.topbar-btn.primary:hover { box-shadow: 0 0 20px rgba(0,212,255,0.3); }
+
+/* Content scroll area */
+#content-area {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  padding: 24px 28px;
+  scroll-behavior: smooth;
+}
+
+/* ══════════════════════════════════════════════════
+   VIEWS
+══════════════════════════════════════════════════ */
+.view { display: none; }
+.view.active { display: block; animation: fadeIn 0.25s ease; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+
+/* ══════════════════════════════════════════════════
+   STAT CARDS (GRID)
+══════════════════════════════════════════════════ */
+.stats-row {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  gap: 14px; margin-bottom: 24px;
+}
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px 20px;
+  position: relative; overflow: hidden;
+  transition: border-color 0.2s, transform 0.15s;
+}
+.stat-card:hover { border-color: var(--border-light); transform: translateY(-1px); }
+.stat-card::before {
+  content: '';
+  position: absolute; top: 0; left: 0; right: 0; height: 2px;
+}
+.stat-card.c-accent::before { background: var(--accent); }
+.stat-card.c-red::before    { background: var(--red); }
+.stat-card.c-orange::before { background: var(--orange); }
+.stat-card.c-green::before  { background: var(--green); }
+.stat-card.c-purple::before { background: var(--purple); }
+.stat-card .sc-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; margin-bottom: 14px;
+}
+.stat-card .sc-val {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 30px; font-weight: 700; line-height: 1;
+  margin-bottom: 4px;
+}
+.stat-card .sc-lbl {
+  font-size: 12px; color: var(--text2); font-weight: 500;
+}
+.stat-card .sc-trend {
+  position: absolute; top: 16px; right: 18px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  font-weight: 600; display: flex; align-items: center; gap: 3px;
+}
+
+/* ══════════════════════════════════════════════════
+   CARDS & TABLES
+══════════════════════════════════════════════════ */
+.panel-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden; margin-bottom: 20px;
+}
+.panel-card-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.panel-card-header h3 {
+  font-size: 14px; font-weight: 700; color: var(--text);
+  display: flex; align-items: center; gap: 8px;
+}
+.panel-card-body { padding: 16px 20px; }
+
+.data-table {
+  width: 100%; border-collapse: collapse;
+}
+.data-table th {
+  font-size: 10px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text3); text-align: left;
+  padding: 10px 14px; border-bottom: 1px solid var(--border);
+  background: var(--bg3);
+}
+.data-table td {
+  padding: 12px 14px; font-size: 13px;
+  border-bottom: 1px solid rgba(26,36,64,0.5);
+  vertical-align: middle;
+}
+.data-table tr { transition: background 0.1s; cursor: pointer; }
+.data-table tbody tr:hover { background: var(--bg-hover); }
+.data-table tr.urgent-row { border-left: 3px solid var(--red); }
+
+/* ══════════════════════════════════════════════════
+   BADGES
+══════════════════════════════════════════════════ */
+.badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 3px 10px; border-radius: 6px;
+  font-size: 11px; font-family: 'JetBrains Mono', monospace;
+  font-weight: 600; text-transform: uppercase;
+  letter-spacing: 0.3px; border: 1px solid; white-space: nowrap;
+}
+.badge-new      { color: var(--accent); border-color: rgba(0,212,255,0.3); background: var(--accent-dim); }
+.badge-open     { color: var(--orange); border-color: rgba(255,152,0,0.3); background: var(--orange-dim); }
+.badge-progress { color: var(--purple); border-color: rgba(124,77,255,0.3); background: var(--purple-dim); }
+.badge-done     { color: var(--green);  border-color: rgba(0,230,118,0.3);  background: var(--green-dim); }
+.badge-closed   { color: var(--text3);  border-color: rgba(74,90,110,0.3);  background: rgba(74,90,110,0.06); }
+.badge-urgent   { color: var(--red);    border-color: rgba(244,67,54,0.3);  background: var(--red-dim); }
+.badge-high     { color: var(--orange); border-color: rgba(255,152,0,0.3);  background: var(--orange-dim); }
+.badge-medium   { color: var(--accent); border-color: rgba(0,212,255,0.3);  background: var(--accent-dim); }
+.badge-low      { color: var(--text3);  border-color: rgba(74,90,110,0.3);  background: rgba(74,90,110,0.06); }
+
+/* ══════════════════════════════════════════════════
+   AVATAR
+══════════════════════════════════════════════════ */
+.avatar {
+  border-radius: 8px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 700; flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   FORMS
+══════════════════════════════════════════════════ */
+.form-group { margin-bottom: 16px; }
+.form-group label {
+  display: block; font-size: 11px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.8px;
+  color: var(--text3); margin-bottom: 7px;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-family: 'DM Sans', sans-serif;
+  font-size: 14px; padding: 11px 14px; outline: none;
+  transition: border-color 0.15s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus { border-color: var(--accent); }
+.form-group textarea { min-height: 90px; resize: vertical; line-height: 1.5; }
+.form-group select {
+  -webkit-appearance: none; appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5a73' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 14px center;
+  padding-right: 36px;
+}
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.form-row-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+
+/* ══════════════════════════════════════════════════
+   BUTTONS
+══════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: none; border-radius: 8px;
+  font-family: 'DM Sans', sans-serif; font-weight: 600;
+  cursor: pointer; transition: all 0.15s;
+  font-size: 13px; padding: 10px 18px;
+}
+.btn:hover { filter: brightness(1.1); }
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--accent); color: #080c16; }
+.btn-green   { background: var(--green);  color: #080c16; }
+.btn-ghost   { background: var(--bg3); color: var(--text2); border: 1px solid var(--border); }
+.btn-danger  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(244,67,54,0.3); }
+.btn-sm      { padding: 7px 12px; font-size: 12px; }
+
+/* ══════════════════════════════════════════════════
+   MODAL OVERLAY (replaces bottom sheet)
+══════════════════════════════════════════════════ */
+#modal-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(6px);
+  z-index: 100; align-items: center; justify-content: center;
+}
+#modal-overlay.open { display: flex; }
+#modal {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); width: 560px; max-width: 94vw;
+  max-height: 88vh; display: flex; flex-direction: column;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+  animation: modalIn 0.25s ease;
+}
+@keyframes modalIn { from { opacity: 0; transform: scale(0.96) translateY(10px); } }
+.modal-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 22px; border-bottom: 1px solid var(--border);
+}
+.modal-head h2 { font-size: 16px; font-weight: 700; flex: 1; }
+.modal-body {
+  flex: 1; overflow-y: auto; padding: 20px 22px;
+}
+.modal-footer {
+  padding: 14px 22px; border-top: 1px solid var(--border);
+  display: flex; gap: 10px; justify-content: flex-end;
+}
+
+/* ══════════════════════════════════════════════════
+   FILTER CHIPS
+══════════════════════════════════════════════════ */
+.filter-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.chip {
+  padding: 6px 14px; border-radius: 20px;
+  font-size: 12px; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); cursor: pointer;
+  transition: all 0.12s; white-space: nowrap;
+}
+.chip:hover { background: var(--bg4); }
+.chip.active {
+  background: var(--accent-dim);
+  border-color: rgba(0,212,255,0.3);
+  color: var(--accent);
+}
+
+/* ══════════════════════════════════════════════════
+   STATUS GRID (quick change)
+══════════════════════════════════════════════════ */
+.status-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 14px; }
+.status-btn {
+  padding: 10px 8px; border-radius: 8px;
+  border: 1.5px solid var(--border); background: transparent;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px; font-weight: 600; text-transform: uppercase;
+  cursor: pointer; transition: all 0.15s; text-align: center;
+}
+.status-btn.selected { color: #080c16 !important; }
+.status-btn:hover { filter: brightness(1.2); }
+
+/* ══════════════════════════════════════════════════
+   DETAIL BLOCKS
+══════════════════════════════════════════════════ */
+.detail-block {
+  background: var(--bg3); border-radius: 8px;
+  padding: 12px 14px; margin-bottom: 10px;
+}
+.detail-block .lbl {
+  font-size: 10px; text-transform: uppercase;
+  letter-spacing: 0.8px; color: var(--text3); margin-bottom: 4px;
+}
+.detail-block .val { font-size: 13px; color: var(--text); line-height: 1.4; }
+.detail-row { display: flex; gap: 10px; }
+.detail-row .detail-block { flex: 1; }
+
+/* ══════════════════════════════════════════════════
+   CHARTS
+══════════════════════════════════════════════════ */
+.chart-container {
+  position: relative; width: 100%;
+}
+.chart-bar-group { margin-bottom: 10px; }
+.chart-bar-label {
+  font-size: 12px; color: var(--text2); margin-bottom: 5px;
+  display: flex; justify-content: space-between;
+}
+.chart-bar-track {
+  height: 8px; background: var(--bg4); border-radius: 4px; overflow: hidden;
+}
+.chart-bar-fill {
+  height: 100%; border-radius: 4px;
+  transition: width 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.donut-container {
+  display: flex; align-items: center; justify-content: center; gap: 24px;
+}
+.donut-legend { display: flex; flex-direction: column; gap: 8px; }
+.donut-legend-item {
+  display: flex; align-items: center; gap: 8px; font-size: 12px;
+}
+.donut-legend-dot {
+  width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0;
+}
+
+/* ══════════════════════════════════════════════════
+   SETTINGS
+══════════════════════════════════════════════════ */
+.settings-section {
+  margin-bottom: 28px;
+}
+.settings-section-title {
+  font-size: 16px; font-weight: 700; color: var(--text);
+  margin-bottom: 4px;
+}
+.settings-section-desc {
+  font-size: 12px; color: var(--text3); margin-bottom: 16px;
+}
+.settings-card {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); overflow: hidden;
+}
+.settings-row {
+  display: flex; align-items: center; gap: 14px;
+  padding: 14px 18px;
+  border-bottom: 1px solid rgba(26,36,64,0.5);
+}
+.settings-row:last-child { border-bottom: none; }
+.settings-row .sr-icon {
+  width: 36px; height: 36px; border-radius: 9px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 16px; flex-shrink: 0;
+}
+.settings-row .sr-info { flex: 1; }
+.settings-row .sr-title { font-size: 13px; font-weight: 600; }
+.settings-row .sr-desc { font-size: 11px; color: var(--text3); margin-top: 1px; }
+.settings-row .sr-action { flex-shrink: 0; }
+
+/* Toggle switch */
+.toggle {
+  position: relative; width: 42px; height: 24px;
+  background: var(--bg4); border-radius: 12px;
+  cursor: pointer; transition: background 0.2s;
+}
+.toggle.on { background: var(--accent); }
+.toggle::after {
+  content: ''; position: absolute;
+  top: 3px; left: 3px;
+  width: 18px; height: 18px;
+  background: #fff; border-radius: 50%;
+  transition: transform 0.2s;
+}
+.toggle.on::after { transform: translateX(18px); }
+
+/* Tags editor */
+.tag-list { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.tag-item {
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 10px; border-radius: 6px;
+  font-size: 12px; font-weight: 600;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2);
+}
+.tag-item .tag-remove {
+  cursor: pointer; color: var(--text3); font-size: 12px;
+  transition: color 0.1s; margin-left: 2px;
+}
+.tag-item .tag-remove:hover { color: var(--red); }
+.tag-add-row {
+  display: flex; gap: 8px;
+}
+.tag-add-row input {
+  flex: 1; background: var(--bg3);
+  border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text); font-size: 13px; padding: 8px 12px;
+  outline: none; font-family: 'DM Sans', sans-serif;
+}
+.tag-add-row input:focus { border-color: var(--accent); }
+
+/* ══════════════════════════════════════════════════
+   PLANNING
+══════════════════════════════════════════════════ */
+.planning-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.planning-nav {
+  display: flex; align-items: center; gap: 12px;
+}
+.planning-nav .pn-btn {
+  width: 34px; height: 34px; border-radius: 8px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text2); font-size: 16px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; transition: all 0.12s;
+}
+.planning-nav .pn-btn:hover { background: var(--bg4); color: var(--text); }
+.day-col {
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius-lg); margin-bottom: 12px; overflow: hidden;
+}
+.day-col-header {
+  padding: 10px 16px; background: var(--bg3);
+  display: flex; align-items: center; justify-content: space-between;
+}
+.day-col-header.today { background: rgba(0,212,255,0.06); }
+.day-col-name { font-size: 13px; font-weight: 700; }
+.day-col-date { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--text3); }
+.day-col-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid rgba(26,36,64,0.4);
+  cursor: pointer; transition: background 0.1s;
+}
+.day-col-item:last-child { border-bottom: none; }
+.day-col-item:hover { background: var(--bg-hover); }
+
+/* ══════════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════════ */
+#toast {
+  position: fixed; bottom: 28px; right: 28px;
+  background: var(--bg3); border: 1px solid var(--border);
+  color: var(--text); padding: 12px 20px; border-radius: var(--radius);
+  font-size: 13px; font-weight: 500;
+  opacity: 0; transform: translateY(10px);
+  transition: all 0.25s; pointer-events: none; z-index: 200;
+  box-shadow: var(--shadow);
+}
+#toast.show { opacity: 1; transform: translateY(0); }
+#toast.success { border-color: var(--green); color: var(--green); }
+#toast.error   { border-color: var(--red); color: var(--red); }
+
+/* ══════════════════════════════════════════════════
+   EMPTY STATES
+══════════════════════════════════════════════════ */
+.empty {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 48px 24px; gap: 10px; text-align: center;
+}
+.empty .icon { font-size: 40px; opacity: 0.4; }
+.empty p { font-size: 13px; color: var(--text3); }
+
+/* ══════════════════════════════════════════════════
+   SCROLLBAR
+══════════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--border-light); }
+
+/* ══════════════════════════════════════════════════
+   RESPONSIVE
+══════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  #sidebar { display: none; }
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<!-- LOADER -->
+<div id="loader">
+  <div class="loader-logo">⬡ TECHLAB</div>
+  <div style="font-size:12px;color:var(--text3);letter-spacing:1px">Connexion en cours…</div>
+  <div class="loader-bar"><div class="loader-bar-inner"></div></div>
+</div>
+
+<!-- ═══ SHELL ═══ -->
+<div id="shell">
+
+<!-- ═══ SIDEBAR ═══ -->
+<div id="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-hex">⬡</div>
+    <div>
+      <div class="brand-text">TechLab</div>
+      <div class="brand-sub">Field Operations</div>
+    </div>
+  </div>
+
+  <div class="sidebar-nav">
+    <div class="nav-section-title">Navigation</div>
+
+    <div class="nav-item active" data-view="today" onclick="showView('today')">
+      <span class="ni-icon">◉</span> Aujourd'hui
+      <span class="ni-badge accent" id="sb-badge-today" style="display:none">0</span>
+    </div>
+    <div class="nav-item" data-view="list" onclick="showView('list')">
+      <span class="ni-icon">▤</span> Interventions
+      <span class="ni-badge" id="sb-badge-open">0</span>
+    </div>
+    <div class="nav-item" data-view="planning" onclick="showView('planning')">
+      <span class="ni-icon">◫</span> Planning
+    </div>
+    <div class="nav-item" data-view="stats" onclick="showView('stats')">
+      <span class="ni-icon">◔</span> Statistiques
+    </div>
+
+    <div class="nav-section-title" style="margin-top:10px">Gestion</div>
+
+    <div class="nav-item" data-view="settings" onclick="showView('settings')">
+      <span class="ni-icon">⚙</span> Paramètres
+    </div>
+    <div class="nav-item" data-view="techs-mgmt" onclick="showView('techs-mgmt')">
+      <span class="ni-icon">◈</span> Techniciens
+    </div>
+    <div class="nav-item" data-view="sites-mgmt" onclick="showView('sites-mgmt')">
+      <span class="ni-icon">⊡</span> Sites
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="sidebar-user" onclick="showView('settings')">
+      <div class="sidebar-user-avatar" id="sb-user-avatar" style="background:var(--accent-dim);border:2px solid var(--accent);color:var(--accent)">?</div>
+      <div class="sidebar-user-info">
+        <div class="sidebar-user-name" id="sb-user-name">Sélectionner un tech</div>
+        <div class="sidebar-user-role" id="sb-user-role">Technicien</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ MAIN AREA ═══ -->
+<div id="main">
+  <div id="topbar">
+    <div id="topbar-title">Aujourd'hui</div>
+    <div class="topbar-search" id="global-search-container" style="display:none">
+      <span class="ts-icon">🔍</span>
+      <input type="text" id="global-search" placeholder="Rechercher une intervention..." oninput="filterList()">
+    </div>
+    <div style="flex:1"></div>
+    <button class="topbar-btn" onclick="showView('settings')" title="Paramètres">⚙</button>
+    <button class="topbar-btn primary" onclick="openNew()" title="Nouvelle intervention">+</button>
+  </div>
+
+  <div id="content-area">
+
+    <!-- ════ VUE AUJOURD'HUI ════ -->
+    <div id="view-today" class="view active">
+      <div class="stats-row" id="today-stats"></div>
+      <div id="today-urgent-section"></div>
+      <div class="panel-card">
+        <div class="panel-card-header">
+          <h3>📅 Interventions du jour <span id="today-count" style="color:var(--accent)"></span></h3>
+          <button class="btn btn-sm btn-primary" onclick="openNew()">+ Nouvelle</button>
+        </div>
+        <div id="today-table-body"></div>
+      </div>
+    </div>
+
+    <!-- ════ VUE LISTE ════ -->
+    <div id="view-list" class="view">
+      <div class="filter-bar" id="filter-bar"></div>
+      <div class="panel-card">
+        <div class="panel-card-header">
+          <h3>▤ Toutes les interventions</h3>
+          <button class="btn btn-sm btn-primary" onclick="openNew()">+ Nouvelle</button>
+        </div>
+        <div id="list-table-body"></div>
+      </div>
+    </div>
+
+    <!-- ════ VUE PLANNING ════ -->
+    <div id="view-planning" class="view">
+      <div class="planning-header">
+        <div>
+          <div style="font-size:18px;font-weight:700" id="plan-week-label"></div>
+          <div style="font-size:12px;color:var(--text3)" id="plan-week-sub"></div>
+        </div>
+        <div class="planning-nav">
+          <div class="pn-btn" onclick="planPrev()">‹</div>
+          <button class="btn btn-sm btn-ghost" onclick="planOffset=0;renderPlanning()">Aujourd'hui</button>
+          <div class="pn-btn" onclick="planNext()">›</div>
+        </div>
+      </div>
+      <div id="planning-content"></div>
+    </div>
+
+    <!-- ════ VUE STATISTIQUES ════ -->
+    <div id="view-stats" class="view">
+      <div class="stats-row" id="stats-top-row"></div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px">
+        <div class="panel-card">
+          <div class="panel-card-header"><h3>◔ Répartition par statut</h3></div>
+          <div class="panel-card-body" id="stats-status-chart"></div>
+        </div>
+        <div class="panel-card">
+          <div class="panel-card-header"><h3>◉ Répartition par priorité</h3></div>
+          <div class="panel-card-body" id="stats-priority-chart"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:20px">
+        <div class="panel-card">
+          <div class="panel-card-header"><h3>◈ Par catégorie</h3></div>
+          <div class="panel-card-body" id="stats-category-chart"></div>
+        </div>
+        <div class="panel-card">
+          <div class="panel-card-header"><h3>⊡ Par site</h3></div>
+          <div class="panel-card-body" id="stats-site-chart"></div>
+        </div>
+      </div>
+      <div class="panel-card">
+        <div class="panel-card-header"><h3>◈ Performance par technicien</h3></div>
+        <div class="panel-card-body" id="stats-tech-chart"></div>
+      </div>
+    </div>
+
+    <!-- ════ VUE PARAMÈTRES ════ -->
+    <div id="view-settings" class="view">
+      <!-- Profil technicien actif -->
+      <div class="settings-section">
+        <div class="settings-section-title">Profil technicien actif</div>
+        <div class="settings-section-desc">Sélectionnez votre profil pour filtrer les interventions</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--accent-dim);color:var(--accent)">◈</div>
+            <div class="sr-info">
+              <div class="sr-title">Technicien actif</div>
+              <div class="sr-desc">Utilisé comme filtre par défaut</div>
+            </div>
+            <div class="sr-action" style="width:200px">
+              <select id="settings-tech-select" onchange="changeActiveTech()" style="width:100%;background:var(--bg3);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'DM Sans',sans-serif;font-size:13px;padding:8px 12px;outline:none;-webkit-appearance:none;appearance:none"></select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Statuts -->
+      <div class="settings-section">
+        <div class="settings-section-title">Statuts d'intervention</div>
+        <div class="settings-section-desc">Personnalisez les statuts disponibles pour les interventions</div>
+        <div class="settings-card">
+          <div style="padding:16px 18px">
+            <div class="tag-list" id="settings-statuses"></div>
+            <div class="tag-add-row">
+              <input type="text" id="input-new-status" placeholder="Nouveau statut..." onkeydown="if(event.key==='Enter')addParamTag('status')">
+              <button class="btn btn-sm btn-primary" onclick="addParamTag('status')">Ajouter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Priorités -->
+      <div class="settings-section">
+        <div class="settings-section-title">Niveaux de priorité</div>
+        <div class="settings-section-desc">Définissez les niveaux de priorité des interventions</div>
+        <div class="settings-card">
+          <div style="padding:16px 18px">
+            <div class="tag-list" id="settings-priorities"></div>
+            <div class="tag-add-row">
+              <input type="text" id="input-new-priority" placeholder="Nouvelle priorité..." onkeydown="if(event.key==='Enter')addParamTag('priority')">
+              <button class="btn btn-sm btn-primary" onclick="addParamTag('priority')">Ajouter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Catégories -->
+      <div class="settings-section">
+        <div class="settings-section-title">Catégories d'équipement</div>
+        <div class="settings-section-desc">Types d'équipements gérés par vos techniciens</div>
+        <div class="settings-card">
+          <div style="padding:16px 18px">
+            <div class="tag-list" id="settings-categories"></div>
+            <div class="tag-add-row">
+              <input type="text" id="input-new-cat" placeholder="Nouvelle catégorie..." onkeydown="if(event.key==='Enter')addParamTag('cat')">
+              <button class="btn btn-sm btn-primary" onclick="addParamTag('cat')">Ajouter</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Préférences d'affichage -->
+      <div class="settings-section">
+        <div class="settings-section-title">Préférences d'affichage</div>
+        <div class="settings-section-desc">Personnalisez l'interface à votre convenance</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--purple-dim);color:var(--purple)">◉</div>
+            <div class="sr-info">
+              <div class="sr-title">Afficher les interventions clôturées</div>
+              <div class="sr-desc">Inclure les interventions terminées dans la vue Aujourd'hui</div>
+            </div>
+            <div class="sr-action">
+              <div class="toggle" id="toggle-show-closed" onclick="togglePref('showClosed')"></div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--orange-dim);color:var(--orange)">▤</div>
+            <div class="sr-info">
+              <div class="sr-title">Notifications urgences</div>
+              <div class="sr-desc">Mettre en avant les interventions urgentes</div>
+            </div>
+            <div class="sr-action">
+              <div class="toggle on" id="toggle-urgent-highlight" onclick="togglePref('urgentHighlight')"></div>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--green-dim);color:var(--green)">◔</div>
+            <div class="sr-info">
+              <div class="sr-title">Animations</div>
+              <div class="sr-desc">Activer les animations de transition</div>
+            </div>
+            <div class="sr-action">
+              <div class="toggle on" id="toggle-animations" onclick="togglePref('animations')"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Données -->
+      <div class="settings-section">
+        <div class="settings-section-title">Gestion des données</div>
+        <div class="settings-section-desc">Actions sur la base de données</div>
+        <div class="settings-card">
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--red-dim);color:var(--red)">⚠</div>
+            <div class="sr-info">
+              <div class="sr-title">Exporter les données</div>
+              <div class="sr-desc">Télécharger toutes les interventions en JSON</div>
+            </div>
+            <div class="sr-action">
+              <button class="btn btn-sm btn-ghost" onclick="exportData()">Exporter</button>
+            </div>
+          </div>
+          <div class="settings-row">
+            <div class="sr-icon" style="background:var(--red-dim);color:var(--red)">🗑</div>
+            <div class="sr-info">
+              <div class="sr-title">Purger les interventions clôturées</div>
+              <div class="sr-desc">Supprimer définitivement les interventions clôturées</div>
+            </div>
+            <div class="sr-action">
+              <button class="btn btn-sm btn-danger" onclick="purgeClosed()">Purger</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════ VUE GESTION TECHNICIENS ════ -->
+    <div id="view-techs-mgmt" class="view">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700">Techniciens</div>
+        <button class="btn btn-sm btn-primary" onclick="openTechForm(null)">+ Ajouter</button>
+      </div>
+      <div class="panel-card">
+        <div id="techs-mgmt-body"></div>
+      </div>
+    </div>
+
+    <!-- ════ VUE GESTION SITES ════ -->
+    <div id="view-sites-mgmt" class="view">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+        <div style="font-size:18px;font-weight:700">Sites</div>
+        <button class="btn btn-sm btn-primary" onclick="openSiteForm(null)">+ Ajouter</button>
+      </div>
+      <div class="panel-card">
+        <div id="sites-mgmt-body"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</div>
+
+<!-- MODAL -->
+<div id="modal-overlay" onclick="if(event.target===this)closeModal()">
+  <div id="modal">
+    <div class="modal-head">
+      <h2 id="modal-title">Titre</h2>
+      <button class="topbar-btn" onclick="closeModal()" style="width:32px;height:32px;font-size:14px">✕</button>
+    </div>
+    <div class="modal-body" id="modal-body"></div>
+    <div class="modal-footer" id="modal-footer"></div>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  DATA STORE
+// ════════════════════════════════════════════════════════════
+const PARAM_DEFAULTS = {
+  cat:      ['Réseau','Serveur','Poste de travail','Imprimante','Sécurité','Logiciel','Téléphonie','Autre'],
+  status:   ['Nouveau','Ouvert','En cours','Terminé','Clôturé'],
+  priority: ['Urgent','Haute','Moyenne','Basse'],
+};
+const COLORS = ['#00d4ff','#00e676','#ff9800','#7c4dff','#f44336','#ff6d00','#1de9b6','#e040fb','#ffd600','#ff4081'];
+const STATUS_COLORS = { 'Nouveau':'#00d4ff','Ouvert':'#ff9800','En cours':'#7c4dff','Terminé':'#00e676','Clôturé':'#4a5a73' };
+const PRIO_COLORS   = { 'Urgent':'#f44336','Haute':'#ff9800','Moyenne':'#00d4ff','Basse':'#4a5a73' };
+
+function load(key, def) {
+  if (key === 'mobile_active_tech') {
+    try { return localStorage.getItem(key) || def; } catch { return def; }
+  }
+  const cached = window._fbCache?.[key];
+  if (cached !== undefined) return cached;
+  const PARAM_DEF = {
+    'fieldops_param_cat': PARAM_DEFAULTS.cat,
+    'fieldops_param_status': PARAM_DEFAULTS.status,
+    'fieldops_param_priority': PARAM_DEFAULTS.priority,
+  };
+  return PARAM_DEF[key] !== undefined ? PARAM_DEF[key] : def;
+}
+function save(key, val) {
+  if (key === 'mobile_active_tech') { try { localStorage.setItem(key, val); } catch {} return; }
+  if (!window._fbCache) window._fbCache = {};
+  window._fbCache[key] = val;
+  if (window.fbSave) window.fbSave(key, val).catch(e => console.warn('save:', e));
+}
+
+function getParam(k) { return load('fieldops_param_'+k, PARAM_DEFAULTS[k]); }
+function uid() { return 'i' + Date.now() + Math.random().toString(36).slice(2,6); }
+
+let interventions = [];
+let techs = [];
+let sites = [];
+let activeTechId = load('mobile_active_tech', '');
+let planOffset = 0;
+let currentFilter = 'all';
+let prefs = { showClosed: false, urgentHighlight: true, animations: true };
+
+function reloadData() {
+  interventions = load('fieldops_interventions', []);
+  techs = load('fieldops_techs', []);
+  sites = load('fieldops_sites', []);
+}
+
+// ════════════════════════════════════════════════════════════
+//  UTILS
+// ════════════════════════════════════════════════════════════
+function getTech(id)  { return techs.find(t => t.id === id); }
+function getSite(id)  { return sites.find(s => s.id === id); }
+function fmtDate(d)   { if (!d) return '—'; const p = d.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
+function todayStr()   { return new Date().toISOString().split('T')[0]; }
+function initials(f,l){ return ((f||'?')[0]+(l||'?')[0]).toUpperCase(); }
+function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+function avatar(id, size=34) {
+  const t = getTech(id);
+  const bg = t ? t.color : '#4a5a73';
+  const txt = t ? initials(t.first, t.last) : '?';
+  return `<span class="avatar" style="width:${size}px;height:${size}px;background:${bg}18;border:2px solid ${bg};color:${bg};font-size:${Math.round(size*0.38)}px">${txt}</span>`;
+}
+
+function statusBadge(s) {
+  const map = { 'Nouveau':'badge-new','Ouvert':'badge-open','En cours':'badge-progress','Terminé':'badge-done','Clôturé':'badge-closed' };
+  return `<span class="badge ${map[s]||'badge-new'}">${s}</span>`;
+}
+function priorityBadge(p) {
+  const map = { 'Urgent':'badge-urgent','Haute':'badge-high','Moyenne':'badge-medium','Basse':'badge-low','Urgente':'badge-urgent' };
+  return `<span class="badge ${map[p]||'badge-medium'}">${p}</span>`;
+}
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(() => { t.className = ''; }, 2800);
+}
+
+// ════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ════════════════════════════════════════════════════════════
+function showView(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('view-'+name)?.classList.add('active');
+  document.querySelector(`.nav-item[data-view="${name}"]`)?.classList.add('active');
+
+  const titles = {
+    today:'Aujourd\'hui', list:'Interventions', planning:'Planning',
+    stats:'Statistiques', settings:'Paramètres',
+    'techs-mgmt':'Gestion des techniciens', 'sites-mgmt':'Gestion des sites'
+  };
+  document.getElementById('topbar-title').textContent = titles[name] || name;
+
+  // Show search bar only in list view
+  document.getElementById('global-search-container').style.display = name === 'list' ? 'flex' : 'none';
+
+  reloadData();
+  if (name === 'today')      renderToday();
+  if (name === 'list')       renderList();
+  if (name === 'planning')   renderPlanning();
+  if (name === 'stats')      renderStats();
+  if (name === 'settings')   renderSettings();
+  if (name === 'techs-mgmt') renderTechsMgmt();
+  if (name === 'sites-mgmt') renderSitesMgmt();
+  updateSidebarBadges();
+}
+
+function updateSidebarBadges() {
+  const open = interventions.filter(i => ['Nouveau','Ouvert','En cours'].includes(i.status)).length;
+  const urgent = interventions.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+  document.getElementById('sb-badge-open').textContent = open;
+  const ub = document.getElementById('sb-badge-today');
+  if (urgent > 0) { ub.style.display = 'flex'; ub.textContent = urgent; ub.className = 'ni-badge'; }
+  else { ub.style.display = 'none'; }
+
+  // Sidebar user
+  const tech = getTech(activeTechId);
+  const av = document.getElementById('sb-user-avatar');
+  const nm = document.getElementById('sb-user-name');
+  const rl = document.getElementById('sb-user-role');
+  if (tech) {
+    av.textContent = initials(tech.first, tech.last);
+    av.style.color = tech.color; av.style.borderColor = tech.color;
+    av.style.background = tech.color + '18';
+    nm.textContent = tech.first + ' ' + tech.last;
+    rl.textContent = tech.role || 'Technicien';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  TODAY VIEW
+// ════════════════════════════════════════════════════════════
+function renderToday() {
+  const today = todayStr();
+  const all = interventions;
+  const todayItems = all.filter(i => i.date === today);
+  const open = all.filter(i => ['Nouveau','Ouvert','En cours'].includes(i.status)).length;
+  const urgent = all.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+  const doneToday = todayItems.filter(i => ['Terminé','Clôturé'].includes(i.status)).length;
+  const totalHours = todayItems.reduce((s,i) => s + (parseFloat(i.duration)||0), 0);
+
+  document.getElementById('today-stats').innerHTML = `
+    <div class="stat-card c-accent">
+      <div class="sc-icon" style="background:var(--accent-dim);color:var(--accent)">▤</div>
+      <div class="sc-val" style="color:var(--accent)">${open}</div>
+      <div class="sc-lbl">En attente</div>
+    </div>
+    <div class="stat-card c-red">
+      <div class="sc-icon" style="background:var(--red-dim);color:var(--red)">⚠</div>
+      <div class="sc-val" style="color:var(--red)">${urgent}</div>
+      <div class="sc-lbl">Urgentes</div>
+    </div>
+    <div class="stat-card c-orange">
+      <div class="sc-icon" style="background:var(--orange-dim);color:var(--orange)">📅</div>
+      <div class="sc-val" style="color:var(--orange)">${todayItems.length}</div>
+      <div class="sc-lbl">Planifiées aujourd'hui</div>
+    </div>
+    <div class="stat-card c-green">
+      <div class="sc-icon" style="background:var(--green-dim);color:var(--green)">✓</div>
+      <div class="sc-val" style="color:var(--green)">${doneToday}</div>
+      <div class="sc-lbl">Clôturées aujourd'hui</div>
+    </div>`;
+
+  // Urgent section
+  const urgentItems = all.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status));
+  const us = document.getElementById('today-urgent-section');
+  if (urgentItems.length > 0) {
+    us.innerHTML = `
+      <div class="panel-card" style="border-color:rgba(244,67,54,0.25);margin-bottom:20px">
+        <div class="panel-card-header" style="background:rgba(244,67,54,0.04)">
+          <h3 style="color:var(--red)">🔴 Urgences actives · ${urgentItems.length}</h3>
+        </div>
+        <table class="data-table">
+          <thead><tr>
+            <th>Intervention</th><th>Site</th><th>Statut</th><th>Tech</th><th>Date</th>
+          </tr></thead>
+          <tbody>
+            ${urgentItems.map(i => `<tr class="urgent-row" onclick="openDetail('${i.id}')">
+              <td style="font-weight:600">${escHtml(i.title)}</td>
+              <td>${getSite(i.site)?.name||'—'}</td>
+              <td>${statusBadge(i.status)}</td>
+              <td>${avatar(i.tech,26)} <span style="font-size:12px;color:var(--text2)">${getTech(i.tech)?.first||'—'}</span></td>
+              <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3)">${fmtDate(i.date)}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } else { us.innerHTML = ''; }
+
+  // Today items
+  document.getElementById('today-count').textContent = `· ${todayItems.length}`;
+  const tb = document.getElementById('today-table-body');
+  if (todayItems.length === 0) {
+    tb.innerHTML = `<div class="empty"><div class="icon">📅</div><p>Aucune intervention planifiée aujourd'hui</p></div>`;
+  } else {
+    tb.innerHTML = `<table class="data-table">
+      <thead><tr><th>Intervention</th><th>Site</th><th>Priorité</th><th>Statut</th><th>Tech</th><th>Durée</th></tr></thead>
+      <tbody>${todayItems.map(i => `<tr onclick="openDetail('${i.id}')">
+        <td style="font-weight:600">${escHtml(i.title)}</td>
+        <td style="color:var(--text2)">${getSite(i.site)?.name||'—'}</td>
+        <td>${priorityBadge(i.priority)}</td>
+        <td>${statusBadge(i.status)}</td>
+        <td>${avatar(i.tech,26)}</td>
+        <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3)">${i.duration?i.duration+'h':'—'}</td>
+      </tr>`).join('')}</tbody></table>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  LIST VIEW
+// ════════════════════════════════════════════════════════════
+function renderList() {
+  const bar = document.getElementById('filter-bar');
+  const filters = ['all', ...getParam('status')];
+  bar.innerHTML = filters.map(f => `
+    <div class="chip ${currentFilter===f?'active':''}" onclick="setFilter('${f}')">${f==='all'?'Tout':f}</div>
+  `).join('');
+  applyFilter();
+}
+function setFilter(f) { currentFilter = f; renderList(); }
+function filterList() { applyFilter(); }
+
+function applyFilter() {
+  const q = (document.getElementById('global-search')?.value || '').toLowerCase();
+  let data = [...interventions];
+  if (currentFilter !== 'all') data = data.filter(i => i.status === currentFilter);
+  if (q) data = data.filter(i =>
+    (i.title||'').toLowerCase().includes(q) ||
+    (i.equip||'').toLowerCase().includes(q) ||
+    (getSite(i.site)?.name||'').toLowerCase().includes(q) ||
+    (getTech(i.tech)?.first||'').toLowerCase().includes(q)
+  );
+  data.sort((a,b) => {
+    const au = a.priority==='Urgent' && !['Terminé','Clôturé'].includes(a.status);
+    const bu = b.priority==='Urgent' && !['Terminé','Clôturé'].includes(b.status);
+    if (au && !bu) return -1; if (!au && bu) return 1;
+    return (b.date||'') > (a.date||'') ? 1 : -1;
+  });
+  const el = document.getElementById('list-table-body');
+  if (data.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>Aucune intervention trouvée</p></div>`;
+  } else {
+    el.innerHTML = `<table class="data-table">
+      <thead><tr><th>Intervention</th><th>Catégorie</th><th>Site</th><th>Priorité</th><th>Statut</th><th>Tech</th><th>Date</th></tr></thead>
+      <tbody>${data.map(i => {
+        const isUrgent = i.priority==='Urgent' && !['Terminé','Clôturé'].includes(i.status);
+        return `<tr class="${isUrgent?'urgent-row':''}" onclick="openDetail('${i.id}')">
+          <td style="font-weight:600;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(i.title)}</td>
+          <td style="font-size:12px;color:var(--text2)">${i.category||'—'}</td>
+          <td style="color:var(--text2)">${getSite(i.site)?.name||'—'}</td>
+          <td>${priorityBadge(i.priority)}</td>
+          <td>${statusBadge(i.status)}</td>
+          <td>${avatar(i.tech,26)}</td>
+          <td style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--text3)">${fmtDate(i.date)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  PLANNING VIEW
+// ════════════════════════════════════════════════════════════
+function planPrev() { planOffset--; renderPlanning(); }
+function planNext() { planOffset++; renderPlanning(); }
+
+function renderPlanning() {
+  const today = new Date();
+  today.setDate(today.getDate() + planOffset * 7);
+  const day = today.getDay() || 7;
+  const monday = new Date(today); monday.setDate(today.getDate() - day + 1);
+  const days = [];
+  for (let d = 0; d < 7; d++) { const dt = new Date(monday); dt.setDate(monday.getDate() + d); days.push(dt); }
+
+  document.getElementById('plan-week-label').textContent =
+    `${days[0].toLocaleDateString('fr-FR',{day:'numeric',month:'long'})} — ${days[6].toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})}`;
+  document.getElementById('plan-week-sub').textContent =
+    planOffset === 0 ? 'Semaine courante' : planOffset > 0 ? `+${planOffset} sem.` : `${planOffset} sem.`;
+
+  const DAYS = ['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
+  let html = '';
+  days.forEach((dt, idx) => {
+    const ds = dt.toISOString().split('T')[0];
+    const items = interventions.filter(i => i.date === ds);
+    const isToday = ds === todayStr();
+    html += `<div class="day-col">
+      <div class="day-col-header ${isToday?'today':''}">
+        <div class="day-col-name" ${isToday?'style="color:var(--accent)"':''}>${DAYS[idx]} ${isToday?'· Aujourd\'hui':''}</div>
+        <div class="day-col-date">${dt.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div>
+      </div>`;
+    if (items.length === 0) {
+      html += `<div style="padding:12px 16px;font-size:12px;color:var(--text3)">Aucune intervention</div>`;
+    } else {
+      items.forEach(i => {
+        html += `<div class="day-col-item" onclick="openDetail('${i.id}')">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(i.title)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${getSite(i.site)?.name||'—'} · ${i.duration||'?'}h</div>
+          </div>
+          ${statusBadge(i.status)}
+        </div>`;
+      });
+    }
+    html += '</div>';
+  });
+  document.getElementById('planning-content').innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════
+//  STATISTICS VIEW
+// ════════════════════════════════════════════════════════════
+function renderStats() {
+  const all = interventions;
+  const open = all.filter(i => ['Nouveau','Ouvert','En cours'].includes(i.status)).length;
+  const closed = all.filter(i => ['Terminé','Clôturé'].includes(i.status)).length;
+  const totalHours = all.reduce((s,i) => s + (parseFloat(i.duration)||0), 0);
+  const avgDuration = all.length > 0 ? (totalHours / all.length).toFixed(1) : '0';
+  const rate = all.length > 0 ? Math.round(closed / all.length * 100) : 0;
+
+  document.getElementById('stats-top-row').innerHTML = `
+    <div class="stat-card c-accent">
+      <div class="sc-val" style="color:var(--accent)">${all.length}</div>
+      <div class="sc-lbl">Total interventions</div>
+    </div>
+    <div class="stat-card c-green">
+      <div class="sc-val" style="color:var(--green)">${rate}%</div>
+      <div class="sc-lbl">Taux de résolution</div>
+      <div class="sc-trend" style="color:var(--green)">${closed} résolues</div>
+    </div>
+    <div class="stat-card c-orange">
+      <div class="sc-val" style="color:var(--orange)">${totalHours}h</div>
+      <div class="sc-lbl">Heures totales</div>
+    </div>
+    <div class="stat-card c-purple">
+      <div class="sc-val" style="color:var(--purple)">${avgDuration}h</div>
+      <div class="sc-lbl">Durée moyenne</div>
+    </div>`;
+
+  // Status chart
+  renderBarChart('stats-status-chart', groupBy(all, 'status'), STATUS_COLORS, all.length);
+
+  // Priority chart
+  renderBarChart('stats-priority-chart', groupBy(all, 'priority'), PRIO_COLORS, all.length);
+
+  // Category chart
+  const catGroups = groupBy(all, 'category');
+  renderBarChart('stats-category-chart', catGroups, null, all.length);
+
+  // Site chart
+  const siteGroups = {};
+  all.forEach(i => {
+    const name = getSite(i.site)?.name || 'Non spécifié';
+    siteGroups[name] = (siteGroups[name]||0) + 1;
+  });
+  renderBarChart('stats-site-chart', siteGroups, null, all.length);
+
+  // Tech performance
+  renderTechPerformance();
+}
+
+function groupBy(arr, key) {
+  const g = {};
+  arr.forEach(i => { const v = i[key] || 'Non défini'; g[v] = (g[v]||0) + 1; });
+  return g;
+}
+
+function renderBarChart(containerId, data, colorMap, total) {
+  const el = document.getElementById(containerId);
+  const entries = Object.entries(data).sort((a,b) => b[1]-a[1]);
+  if (entries.length === 0) { el.innerHTML = '<div class="empty"><p>Aucune donnée</p></div>'; return; }
+  const max = Math.max(...entries.map(e => e[1]));
+  el.innerHTML = entries.map(([label, count], idx) => {
+    const pct = max > 0 ? (count / max * 100) : 0;
+    const color = colorMap?.[label] || COLORS[idx % COLORS.length];
+    const pctTotal = total > 0 ? Math.round(count / total * 100) : 0;
+    return `<div class="chart-bar-group">
+      <div class="chart-bar-label"><span>${label}</span><span style="font-family:'JetBrains Mono',monospace;font-weight:600;color:${color}">${count} <span style="color:var(--text3);font-weight:400">(${pctTotal}%)</span></span></div>
+      <div class="chart-bar-track"><div class="chart-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+    </div>`;
+  }).join('');
+}
+
+function renderTechPerformance() {
+  const el = document.getElementById('stats-tech-chart');
+  if (techs.length === 0) { el.innerHTML = '<div class="empty"><p>Aucun technicien</p></div>'; return; }
+
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>Technicien</th><th>Actives</th><th>Clôturées</th><th>Urgentes</th><th>Total</th><th>Heures</th><th>Résolution</th></tr></thead>
+    <tbody>${techs.map(t => {
+      const my = interventions.filter(i => i.tech === t.id);
+      const active = my.filter(i => !['Terminé','Clôturé'].includes(i.status)).length;
+      const closed = my.filter(i => ['Terminé','Clôturé'].includes(i.status)).length;
+      const urgent = my.filter(i => i.priority==='Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+      const hours = my.reduce((s,i) => s + (parseFloat(i.duration)||0), 0);
+      const rate = my.length > 0 ? Math.round(closed / my.length * 100) : 0;
+      return `<tr>
+        <td style="display:flex;align-items:center;gap:8px">${avatar(t.id,28)} <span style="font-weight:600">${t.first} ${t.last}</span></td>
+        <td style="color:var(--accent);font-family:'JetBrains Mono',monospace;font-weight:600">${active}</td>
+        <td style="color:var(--green);font-family:'JetBrains Mono',monospace;font-weight:600">${closed}</td>
+        <td style="color:var(--red);font-family:'JetBrains Mono',monospace;font-weight:600">${urgent}</td>
+        <td style="font-family:'JetBrains Mono',monospace">${my.length}</td>
+        <td style="font-family:'JetBrains Mono',monospace">${hours}h</td>
+        <td>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div style="flex:1;height:6px;background:var(--bg4);border-radius:3px;overflow:hidden"><div style="height:100%;width:${rate}%;background:var(--green);border-radius:3px"></div></div>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;color:var(--green)">${rate}%</span>
+          </div>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  SETTINGS VIEW
+// ════════════════════════════════════════════════════════════
+function renderSettings() {
+  // Tech select
+  const sel = document.getElementById('settings-tech-select');
+  sel.innerHTML = '<option value="">-- Sélectionner --</option>' +
+    techs.map(t => `<option value="${t.id}" ${t.id===activeTechId?'selected':''}>${t.first} ${t.last}</option>`).join('');
+
+  // Tags
+  renderParamTags('status', 'settings-statuses');
+  renderParamTags('priority', 'settings-priorities');
+  renderParamTags('cat', 'settings-categories');
+
+  // Toggles
+  document.getElementById('toggle-show-closed').className = 'toggle' + (prefs.showClosed ? ' on' : '');
+  document.getElementById('toggle-urgent-highlight').className = 'toggle' + (prefs.urgentHighlight ? ' on' : '');
+  document.getElementById('toggle-animations').className = 'toggle' + (prefs.animations ? ' on' : '');
+}
+
+function renderParamTags(param, containerId) {
+  const values = getParam(param);
+  const el = document.getElementById(containerId);
+  el.innerHTML = values.map((v, idx) => `
+    <div class="tag-item">
+      <span style="color:${COLORS[idx%COLORS.length]};margin-right:2px">●</span>
+      ${escHtml(v)}
+      <span class="tag-remove" onclick="removeParamTag('${param}',${idx})">✕</span>
+    </div>
+  `).join('');
+}
+
+function addParamTag(param) {
+  const inputId = { status:'input-new-status', priority:'input-new-priority', cat:'input-new-cat' }[param];
+  const input = document.getElementById(inputId);
+  const val = input.value.trim();
+  if (!val) return;
+  const arr = [...getParam(param)];
+  if (arr.includes(val)) { toast('Déjà existant', 'error'); return; }
+  arr.push(val);
+  save('fieldops_param_'+param, arr);
+  input.value = '';
+  renderSettings();
+  toast(`"${val}" ajouté ✓`);
+}
+
+function removeParamTag(param, idx) {
+  const arr = [...getParam(param)];
+  const removed = arr.splice(idx, 1)[0];
+  save('fieldops_param_'+param, arr);
+  renderSettings();
+  toast(`"${removed}" supprimé`);
+}
+
+function changeActiveTech() {
+  activeTechId = document.getElementById('settings-tech-select').value;
+  save('mobile_active_tech', activeTechId);
+  updateSidebarBadges();
+  toast('Technicien actif mis à jour ✓');
+}
+
+function togglePref(key) {
+  prefs[key] = !prefs[key];
+  renderSettings();
+}
+
+function exportData() {
+  const data = JSON.stringify({ interventions, techs, sites }, null, 2);
+  const blob = new Blob([data], { type:'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `techlab-export-${todayStr()}.json`;
+  a.click();
+  toast('Export téléchargé ✓');
+}
+
+function purgeClosed() {
+  const closed = interventions.filter(i => i.status === 'Clôturé');
+  if (closed.length === 0) { toast('Aucune intervention clôturée', 'error'); return; }
+  if (!confirm(`Supprimer définitivement ${closed.length} intervention(s) clôturée(s) ?`)) return;
+  interventions = interventions.filter(i => i.status !== 'Clôturé');
+  save('fieldops_interventions', interventions);
+  toast(`${closed.length} intervention(s) purgée(s) ✓`);
+}
+
+// ════════════════════════════════════════════════════════════
+//  TECHS MANAGEMENT
+// ════════════════════════════════════════════════════════════
+function renderTechsMgmt() {
+  const el = document.getElementById('techs-mgmt-body');
+  if (techs.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="icon">◈</div><p>Aucun technicien</p></div>`;
+    return;
+  }
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>Technicien</th><th>Rôle</th><th>Couleur</th><th>Interventions</th><th>Actions</th></tr></thead>
+    <tbody>${techs.map(t => {
+      const count = interventions.filter(i => i.tech === t.id).length;
+      return `<tr>
+        <td style="display:flex;align-items:center;gap:10px">${avatar(t.id,30)} <span style="font-weight:600">${t.first} ${t.last}</span></td>
+        <td style="color:var(--text2)">${t.role||'—'}</td>
+        <td><span style="display:inline-block;width:20px;height:20px;border-radius:5px;background:${t.color}"></span></td>
+        <td style="font-family:'JetBrains Mono',monospace">${count}</td>
+        <td>
+          <button class="btn btn-sm btn-ghost" onclick="openTechForm('${t.id}')">Modifier</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteTech('${t.id}')" style="margin-left:6px">Suppr.</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function openTechForm(id) {
+  const t = id ? techs.find(x => x.id === id) : null;
+  document.getElementById('modal-title').textContent = t ? 'Modifier le technicien' : 'Nouveau technicien';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-row-2">
+      <div class="form-group"><label>Prénom</label><input type="text" id="ft-first" value="${t?escHtml(t.first):''}" placeholder="Prénom"></div>
+      <div class="form-group"><label>Nom</label><input type="text" id="ft-last" value="${t?escHtml(t.last):''}" placeholder="Nom"></div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-group"><label>Rôle</label><input type="text" id="ft-role" value="${t?escHtml(t.role||''):''}" placeholder="Ex: Technicien réseau"></div>
+      <div class="form-group"><label>Couleur</label><input type="color" id="ft-color" value="${t?.color||COLORS[techs.length%COLORS.length]}" style="height:42px;padding:4px;cursor:pointer"></div>
+    </div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="saveTech('${id||''}')">Enregistrer</button>`;
+  openModal();
+}
+
+function saveTech(id) {
+  const first = document.getElementById('ft-first').value.trim();
+  const last = document.getElementById('ft-last').value.trim();
+  if (!first || !last) { toast('Prénom et nom requis', 'error'); return; }
+  const data = { first, last, role: document.getElementById('ft-role').value.trim(), color: document.getElementById('ft-color').value };
+  if (id) {
+    const idx = techs.findIndex(t => t.id === id);
+    techs[idx] = { ...techs[idx], ...data };
+  } else {
+    techs.push({ id: 't'+Date.now(), ...data });
+  }
+  save('fieldops_techs', techs);
+  closeModal(); renderTechsMgmt(); updateSidebarBadges();
+  toast(id ? 'Technicien mis à jour ✓' : 'Technicien ajouté ✓');
+}
+
+function deleteTech(id) {
+  if (!confirm('Supprimer ce technicien ?')) return;
+  techs = techs.filter(t => t.id !== id);
+  save('fieldops_techs', techs);
+  renderTechsMgmt(); updateSidebarBadges();
+  toast('Technicien supprimé');
+}
+
+// ════════════════════════════════════════════════════════════
+//  SITES MANAGEMENT
+// ════════════════════════════════════════════════════════════
+function renderSitesMgmt() {
+  const el = document.getElementById('sites-mgmt-body');
+  if (sites.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="icon">⊡</div><p>Aucun site</p></div>`;
+    return;
+  }
+  el.innerHTML = `<table class="data-table">
+    <thead><tr><th>Site</th><th>Adresse</th><th>Interventions</th><th>Actions</th></tr></thead>
+    <tbody>${sites.map(s => {
+      const count = interventions.filter(i => i.site === s.id).length;
+      return `<tr>
+        <td style="font-weight:600">${escHtml(s.name)}</td>
+        <td style="color:var(--text2)">${escHtml(s.address||'—')}</td>
+        <td style="font-family:'JetBrains Mono',monospace">${count}</td>
+        <td>
+          <button class="btn btn-sm btn-ghost" onclick="openSiteForm('${s.id}')">Modifier</button>
+          <button class="btn btn-sm btn-danger" onclick="deleteSite('${s.id}')" style="margin-left:6px">Suppr.</button>
+        </td>
+      </tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function openSiteForm(id) {
+  const s = id ? sites.find(x => x.id === id) : null;
+  document.getElementById('modal-title').textContent = s ? 'Modifier le site' : 'Nouveau site';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label>Nom du site</label><input type="text" id="fs-name" value="${s?escHtml(s.name):''}" placeholder="Ex: Siège Paris"></div>
+    <div class="form-group"><label>Adresse</label><input type="text" id="fs-address" value="${s?escHtml(s.address||''):''}" placeholder="Ex: 12 rue de la Paix, 75002 Paris"></div>
+    <div class="form-group"><label>Contact</label><input type="text" id="fs-contact" value="${s?escHtml(s.contact||''):''}" placeholder="Personne de contact sur site"></div>`;
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="saveSite('${id||''}')">Enregistrer</button>`;
+  openModal();
+}
+
+function saveSite(id) {
+  const name = document.getElementById('fs-name').value.trim();
+  if (!name) { toast('Nom du site requis', 'error'); return; }
+  const data = { name, address: document.getElementById('fs-address').value.trim(), contact: document.getElementById('fs-contact').value.trim() };
+  if (id) {
+    const idx = sites.findIndex(s => s.id === id);
+    sites[idx] = { ...sites[idx], ...data };
+  } else {
+    sites.push({ id: 's'+Date.now(), ...data });
+  }
+  save('fieldops_sites', sites);
+  closeModal(); renderSitesMgmt();
+  toast(id ? 'Site mis à jour ✓' : 'Site ajouté ✓');
+}
+
+function deleteSite(id) {
+  if (!confirm('Supprimer ce site ?')) return;
+  sites = sites.filter(s => s.id !== id);
+  save('fieldops_sites', sites);
+  renderSitesMgmt();
+  toast('Site supprimé');
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODAL — INTERVENTION DETAIL
+// ════════════════════════════════════════════════════════════
+function openDetail(id) {
+  const i = interventions.find(x => x.id === id);
+  if (!i) return;
+  const tech = getTech(i.tech);
+  const site = getSite(i.site);
+
+  document.getElementById('modal-title').textContent = 'Détail intervention';
+  document.getElementById('modal-body').innerHTML = `
+    <div style="margin-bottom:16px">
+      <div style="font-size:17px;font-weight:700;line-height:1.3;margin-bottom:10px">${escHtml(i.title)}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">${statusBadge(i.status)} ${priorityBadge(i.priority)}
+        ${i.category ? `<span style="font-size:11px;color:var(--text3);font-family:'JetBrains Mono',monospace;padding:3px 8px;background:var(--bg3);border-radius:4px">${i.category}</span>` : ''}
+      </div>
+    </div>
+    <div class="detail-row">
+      <div class="detail-block"><div class="lbl">Date</div><div class="val">${fmtDate(i.date)}</div></div>
+      <div class="detail-block"><div class="lbl">Durée</div><div class="val">${i.duration?i.duration+'h':'—'}</div></div>
+    </div>
+    <div class="detail-block"><div class="lbl">Site</div><div class="val">${site?site.name:'—'}</div></div>
+    <div class="detail-block"><div class="lbl">Équipement</div><div class="val">${i.equip||'—'}</div></div>
+    <div class="detail-row">
+      <div class="detail-block"><div class="lbl">Catégorie</div><div class="val">${i.category||'—'}</div></div>
+      <div class="detail-block"><div class="lbl">Contact</div><div class="val">${i.contact||'—'}</div></div>
+    </div>
+    ${tech ? `<div class="detail-block"><div class="lbl">Technicien</div><div class="val" style="display:flex;align-items:center;gap:8px">${avatar(i.tech,24)} ${tech.first} ${tech.last}</div></div>` : ''}
+    ${i.description ? `<div class="detail-block"><div class="lbl">Description</div><div class="val" style="white-space:pre-wrap">${escHtml(i.description)}</div></div>` : ''}
+    ${i.resolution ? `<div class="detail-block" style="border:1px solid rgba(0,230,118,0.2)"><div class="lbl" style="color:var(--green)">Rapport de clôture</div><div class="val" style="white-space:pre-wrap">${escHtml(i.resolution)}</div></div>` : ''}
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Changer le statut</div>
+      <div class="status-grid" id="status-grid-${i.id}"></div>
+    </div>`;
+
+  const statuses = getParam('status');
+  const grid = document.getElementById(`status-grid-${i.id}`);
+  grid.innerHTML = statuses.map(s => {
+    const col = STATUS_COLORS[s] || 'var(--accent)';
+    const sel = s === i.status;
+    return `<button class="status-btn ${sel?'selected':''}" style="border-color:${col};${sel?`background:${col};color:#080c16`:`color:${col}`}" onclick="quickStatus('${i.id}','${s}')">${s}</button>`;
+  }).join('');
+
+  document.getElementById('modal-footer').innerHTML = `
+    <button class="btn btn-danger" onclick="deleteIntervention('${i.id}')">🗑 Supprimer</button>
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost" onclick="closeModal()">Fermer</button>
+    <button class="btn btn-primary" onclick="openEdit('${i.id}')">✏ Modifier</button>`;
+  openModal();
+}
+
+function quickStatus(id, status) {
+  const idx = interventions.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  interventions[idx].status = status;
+  save('fieldops_interventions', interventions);
+  toast(`Statut → ${status} ✓`);
+
+  const statuses = getParam('status');
+  const grid = document.getElementById(`status-grid-${id}`);
+  if (grid) {
+    grid.innerHTML = statuses.map(s => {
+      const col = STATUS_COLORS[s] || 'var(--accent)';
+      const sel = s === status;
+      return `<button class="status-btn ${sel?'selected':''}" style="border-color:${col};${sel?`background:${col};color:#080c16`:`color:${col}`}" onclick="quickStatus('${id}','${s}')">${s}</button>`;
+    }).join('');
+  }
+  updateSidebarBadges();
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODAL — EDIT / NEW
+// ════════════════════════════════════════════════════════════
+function openNew() { renderForm(null); }
+function openEdit(id) { renderForm(id); }
+
+function renderForm(id) {
+  const i = id ? interventions.find(x => x.id === id) : null;
+  const statuses   = getParam('status');
+  const priorities = getParam('priority');
+  const categories = getParam('cat');
+
+  document.getElementById('modal-title').textContent = i ? 'Modifier l\'intervention' : 'Nouvelle intervention';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="form-group"><label>Titre *</label><input type="text" id="fi-title" value="${i?escHtml(i.title):''}" placeholder="Ex: Panne réseau salle A2" autocomplete="off"></div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Priorité</label><select id="fi-priority">${priorities.map(p=>`<option value="${p}" ${i?.priority===p?'selected':''}>${p}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Statut</label><select id="fi-status">${statuses.map(s=>`<option value="${s}" ${i?.status===s?'selected':''}>${s}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Catégorie</label><select id="fi-category">${categories.map(c=>`<option value="${c}" ${i?.category===c?'selected':''}>${c}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row-3">
+      <div class="form-group"><label>Date</label><input type="date" id="fi-date" value="${i?.date||todayStr()}"></div>
+      <div class="form-group"><label>Durée (h)</label><input type="number" id="fi-duration" value="${i?.duration||''}" placeholder="Ex: 2" min="0.5" step="0.5"></div>
+      <div class="form-group"><label>Technicien</label><select id="fi-tech"><option value="">Non assigné</option>${techs.map(t=>`<option value="${t.id}" ${(i?.tech||activeTechId)===t.id?'selected':''}>${t.first} ${t.last}</option>`).join('')}</select></div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-group"><label>Site</label><select id="fi-site"><option value="">Non spécifié</option>${sites.map(s=>`<option value="${s.id}" ${i?.site===s.id?'selected':''}>${s.name}</option>`).join('')}</select></div>
+      <div class="form-group"><label>Équipement</label><input type="text" id="fi-equip" value="${i?escHtml(i.equip||''):''}" placeholder="Ex: Switch Cisco C9200" autocomplete="off"></div>
+    </div>
+    <div class="form-group"><label>Contact sur site</label><input type="text" id="fi-contact" value="${i?escHtml(i.contact||''):''}" placeholder="Nom du demandeur"></div>
+    <div class="form-group"><label>Description</label><textarea id="fi-desc" placeholder="Décrivez le problème...">${i?escHtml(i.description||''):''}</textarea></div>
+    ${i ? `<div class="form-group"><label>Rapport de clôture</label><textarea id="fi-resolution" placeholder="Actions effectuées, résolution...">${escHtml(i.resolution||'')}</textarea></div>` : ''}`;
+
+  document.getElementById('modal-footer').innerHTML = `
+    ${id ? `<button class="btn btn-danger" onclick="deleteIntervention('${id}')">🗑 Supprimer</button>` : ''}
+    <div style="flex:1"></div>
+    <button class="btn btn-ghost" onclick="closeModal()">Annuler</button>
+    <button class="btn btn-primary" onclick="saveForm('${id||''}')">💾 Enregistrer</button>`;
+  openModal();
+}
+
+function saveForm(id) {
+  const title = document.getElementById('fi-title')?.value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
+  const data = {
+    title,
+    site: document.getElementById('fi-site').value,
+    equip: document.getElementById('fi-equip').value.trim(),
+    priority: document.getElementById('fi-priority').value,
+    status: document.getElementById('fi-status').value,
+    tech: document.getElementById('fi-tech').value,
+    date: document.getElementById('fi-date').value,
+    duration: document.getElementById('fi-duration').value,
+    category: document.getElementById('fi-category').value,
+    contact: document.getElementById('fi-contact').value.trim(),
+    description: document.getElementById('fi-desc').value.trim(),
+    resolution: document.getElementById('fi-resolution')?.value.trim() || '',
+  };
+  if (id) {
+    const idx = interventions.findIndex(x => x.id === id);
+    interventions[idx] = { ...interventions[idx], ...data };
+    save('fieldops_interventions', interventions);
+    toast('Intervention mise à jour ✓');
+  } else {
+    interventions.unshift({ id: uid(), ...data, createdAt: todayStr() });
+    save('fieldops_interventions', interventions);
+    toast('Intervention créée ✓');
+  }
+  closeModal();
+  const active = document.querySelector('.nav-item.active')?.dataset?.view;
+  if (active === 'today') renderToday();
+  if (active === 'list') applyFilter();
+  if (active === 'planning') renderPlanning();
+  if (active === 'stats') renderStats();
+  updateSidebarBadges();
+}
+
+function deleteIntervention(id) {
+  if (!confirm('Supprimer cette intervention ?')) return;
+  interventions = interventions.filter(x => x.id !== id);
+  save('fieldops_interventions', interventions);
+  closeModal();
+  toast('Intervention supprimée');
+  const active = document.querySelector('.nav-item.active')?.dataset?.view;
+  if (active === 'today') renderToday();
+  if (active === 'list') applyFilter();
+  if (active === 'planning') renderPlanning();
+  if (active === 'stats') renderStats();
+  updateSidebarBadges();
+}
+
+// ════════════════════════════════════════════════════════════
+//  MODAL OPEN / CLOSE
+// ════════════════════════════════════════════════════════════
+function openModal() { document.getElementById('modal-overlay').classList.add('open'); }
+function closeModal() { document.getElementById('modal-overlay').classList.remove('open'); }
+
+// ════════════════════════════════════════════════════════════
+//  INIT
+// ════════════════════════════════════════════════════════════
+function startApp() {
+  reloadData();
+  renderToday();
+  updateSidebarBadges();
+}
+
+if (window._fbReady) { startApp(); }
+else { document.addEventListener('firebase-ready', startApp, { once: true }); }
+
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+</script>
+</body>
+</html>

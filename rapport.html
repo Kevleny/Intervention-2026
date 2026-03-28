@@ -1,0 +1,1173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+    <title>Rapport d'Intervention — IMP360</title>
+
+    <!-- ═══════════════════════════════════════════════════════
+         SUPABASE SDK
+    ════════════════════════════════════════════════════════ -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script>
+    const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    </script>
+
+    <style>
+        /* ── BASE ── */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #eef2f7;
+            color: #1a202c;
+            min-height: 100vh;
+            padding-bottom: 40px;
+        }
+
+        /* ── APP HEADER ── */
+        header {
+            background: linear-gradient(135deg, #1a3a5c, #2563a8);
+            color: white;
+            padding: 16px 20px 13px;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        header h1 { font-size: 1.1rem; font-weight: 700; }
+        header p  { font-size: 0.73rem; opacity: 0.72; margin-top: 2px; }
+        .btn-historique {
+            background: rgba(255,255,255,0.15);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            color: white;
+            padding: 8px 14px;
+            border-radius: 9px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .btn-historique:hover, .btn-historique:active { background: rgba(255,255,255,0.25); }
+
+        /* ── HISTORIQUE PANEL ── */
+        .historique-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1000;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        .historique-overlay.show { display: block; }
+        .historique-panel {
+            background: #f0f4f8; margin: 0 auto;
+            width: 100%; max-width: 680px;
+            min-height: 100vh; padding: 16px;
+        }
+        .historique-topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 14px;
+        }
+        .historique-topbar strong { font-size: 0.95rem; color: #1a3a5c; }
+        .historique-empty {
+            text-align: center; padding: 40px 20px;
+            color: #94a3b8; font-size: 0.9rem;
+        }
+        .hist-card {
+            background: white; border-radius: 12px;
+            padding: 14px 16px; margin-bottom: 10px;
+            box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+            cursor: pointer; transition: box-shadow 0.2s;
+        }
+        .hist-card:active { box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+        .hist-card-header {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 6px;
+        }
+        .hist-card-site { font-weight: 700; font-size: 0.92rem; color: #1a3a5c; }
+        .hist-card-date { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
+        .hist-card-meta { font-size: 0.78rem; color: #64748b; line-height: 1.5; }
+        .hist-card-meta span { margin-right: 12px; }
+        .hist-card-actions {
+            display: flex; gap: 8px; margin-top: 10px;
+            border-top: 1px solid #eef2f7; padding-top: 10px;
+        }
+        .hist-btn {
+            flex: 1; padding: 8px; border-radius: 8px;
+            font-size: 0.78rem; font-weight: 600; cursor: pointer;
+            text-align: center; border: none;
+        }
+        .hist-btn-view { background: #eff6ff; color: #2563a8; }
+        .hist-btn-edit { background: #f0fdf4; color: #16a34a; }
+        .hist-btn-delete { background: #fef2f2; color: #dc2626; }
+
+        /* ── FORM LAYOUT ── */
+        .container { padding: 14px; max-width: 620px; margin: 0 auto; }
+
+        .card {
+            background: white;
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 14px;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+        }
+        .card-title {
+            font-size: 0.93rem;
+            font-weight: 700;
+            color: #1a3a5c;
+            margin-bottom: 14px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eef2f7;
+        }
+
+        .field { margin-bottom: 12px; }
+        .field:last-child { margin-bottom: 0; }
+
+        label {
+            display: block;
+            font-size: 0.76rem;
+            font-weight: 600;
+            color: #64748b;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+        }
+
+        input[type="text"],
+        input[type="date"],
+        input[type="time"] {
+            width: 100%;
+            padding: 11px 13px;
+            border: 1.5px solid #e2e8f0;
+            border-radius: 9px;
+            font-size: 0.94rem;
+            color: #1a202c;
+            background: #f8fafc;
+            -webkit-appearance: none;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        input:focus {
+            outline: none;
+            border-color: #2563a8;
+            background: #fff;
+            box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
+        }
+
+        .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+        .technicien-badge {
+            padding: 11px 13px;
+            background: #f0f6ff;
+            border-radius: 9px;
+            font-size: 0.94rem;
+            color: #1a3a5c;
+            font-weight: 600;
+            border: 1.5px solid #dbeafe;
+        }
+
+        /* ── TYPE BUTTONS ── */
+        .type-group { display: flex; gap: 8px; }
+        .type-btn {
+            flex: 1;
+            padding: 10px 4px;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            background: #f8fafc;
+            font-size: 0.81rem;
+            font-weight: 500;
+            cursor: pointer;
+            text-align: center;
+            color: #64748b;
+            transition: all 0.2s;
+        }
+        .type-btn.active {
+            border-color: #2563a8;
+            background: #eff6ff;
+            color: #1a3a5c;
+            font-weight: 700;
+            box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
+        }
+
+        /* ── DYNAMIC LISTS ── */
+        .list-item { display: flex; gap: 8px; margin-bottom: 8px; align-items: center; }
+        .list-item input { flex: 1; }
+        .btn-remove {
+            width: 36px; height: 36px;
+            border: none; border-radius: 9px;
+            background: #fee2e2; color: #dc2626;
+            font-size: 1.3rem; cursor: pointer;
+            flex-shrink: 0;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-add {
+            width: 100%;
+            padding: 9px;
+            border: 2px dashed #cbd5e1;
+            border-radius: 9px;
+            background: transparent;
+            color: #94a3b8;
+            font-size: 0.87rem;
+            font-weight: 500;
+            cursor: pointer;
+            margin-top: 2px;
+            transition: all 0.2s;
+        }
+        .btn-add:hover, .btn-add:active {
+            border-color: #2563a8; color: #2563a8; background: #f0f6ff;
+        }
+
+        /* ── ACTION BUTTONS ── */
+        .btn-validate {
+            width: 100%; padding: 15px;
+            background: linear-gradient(135deg, #1a3a5c, #2563a8);
+            color: white; border: none; border-radius: 12px;
+            font-size: 1rem; font-weight: 700; cursor: pointer;
+            margin-bottom: 12px;
+            box-shadow: 0 4px 14px rgba(37,99,168,0.35);
+            transition: opacity 0.2s;
+        }
+        .btn-validate:active { opacity: 0.85; }
+        .btn-reset {
+            width: 100%; padding: 12px;
+            background: transparent; color: #94a3b8;
+            border: 2px solid #e2e8f0; border-radius: 12px;
+            font-size: 0.9rem; font-weight: 600; cursor: pointer;
+            margin-bottom: 32px; transition: all 0.2s;
+        }
+
+        /* ── MODAL ── */
+        .modal {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.55); z-index: 1000;
+            overflow-y: auto; -webkit-overflow-scrolling: touch;
+        }
+        .modal.show { display: block; }
+        .modal-content {
+            background: #f0f4f8; margin: 0 auto;
+            width: 100%; max-width: 680px;
+            min-height: 100vh; padding: 16px;
+        }
+
+        /* ── MODAL TOPBAR ── */
+        .modal-topbar {
+            display: flex; justify-content: space-between; align-items: center;
+            margin-bottom: 14px;
+        }
+        .modal-topbar strong { font-size: 0.95rem; color: #1a3a5c; }
+        .btn-close {
+            background: white; border: none; border-radius: 8px;
+            padding: 8px 14px; cursor: pointer;
+            font-size: 0.85rem; font-weight: 600; color: #64748b;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+        }
+
+        /* ── STICKY BOTTOM BUTTONS ── */
+        .modal-actions {
+            display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+            position: sticky; bottom: 0;
+            background: #f0f4f8;
+            padding: 10px 0 6px;
+            margin-top: 12px;
+        }
+        .modal-actions button {
+            padding: 12px 6px; border: none; border-radius: 10px;
+            font-size: 0.82rem; font-weight: 700; cursor: pointer;
+        }
+        .btn-copy  { background: white; color: #1a3a5c; border: 2px solid #dbeafe; }
+        .btn-print { background: white; color: #1a3a5c; border: 2px solid #dbeafe; }
+        .btn-share {
+            background: linear-gradient(135deg, #1a3a5c, #2563a8);
+            color: white;
+            box-shadow: 0 3px 10px rgba(37,99,168,0.3);
+        }
+
+        /* ══════════════════════════════════════════
+           ── DOCUMENT RAPPORT (rendu visuel PDF) ──
+           ══════════════════════════════════════════ */
+        .doc {
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.12);
+            font-family: Arial, Helvetica, sans-serif;
+        }
+
+        /* Entête bleue */
+        .doc-header {
+            background: #2196F3;
+            color: white;
+            padding: 10px 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .doc-header-icon { font-size: 1.1rem; }
+        .doc-header-title { font-size: 0.95rem; font-weight: 700; letter-spacing: 0.2px; }
+
+        /* Tableau infos */
+        .doc-info-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .doc-info-table td {
+            padding: 9px 12px;
+            font-size: 0.82rem;
+            vertical-align: top;
+            border: 1px solid #e0e0e0;
+        }
+        .doc-info-table td:first-child { width: 48%; }
+        .doc-info-table .field-label {
+            font-weight: 700;
+            color: #1a202c;
+        }
+        .doc-info-table .field-value {
+            color: #2d3748;
+            margin-top: 2px;
+        }
+
+        /* Logo IMP360 dans le tableau */
+        .imp360-logo {
+            display: flex; flex-direction: column; align-items: flex-end;
+            line-height: 1;
+        }
+        .imp360-logo .logo-text {
+            font-size: 1.3rem; font-weight: 900; letter-spacing: -1px;
+        }
+        .imp360-logo .logo-text .i { color: #4CAF50; }
+        .imp360-logo .logo-text .m { color: #2196F3; }
+        .imp360-logo .logo-text .p { color: #FF5722; }
+        .imp360-logo .logo-text .three { color: #9C27B0; }
+        .imp360-logo .logo-text .six   { color: #2196F3; }
+        .imp360-logo .logo-text .zero  { color: #FF9800; }
+        .imp360-logo .logo-sub {
+            font-size: 0.55rem; color: #607d8b;
+            font-weight: 600; letter-spacing: 0.8px;
+            text-transform: uppercase; margin-top: 2px;
+        }
+
+        /* Cases à cocher */
+        .checkboxes { display: flex; gap: 12px; flex-wrap: wrap; }
+        .cb-item { display: flex; align-items: center; gap: 4px; font-size: 0.8rem; }
+        .cb-box {
+            width: 14px; height: 14px;
+            border: 1.5px solid #555;
+            display: inline-flex; align-items: center; justify-content: center;
+            font-size: 0.7rem; flex-shrink: 0;
+        }
+        .cb-box.checked { background: #1a3a5c; color: white; border-color: #1a3a5c; }
+
+        /* Sections colorées */
+        .doc-section { margin: 0; }
+
+        .doc-section-header {
+            padding: 8px 12px;
+            font-size: 0.83rem;
+            font-weight: 700;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .doc-section-body {
+            padding: 10px 14px 12px;
+            font-size: 0.82rem;
+            line-height: 1.7;
+            color: #2d3748;
+            min-height: 36px;
+        }
+        .doc-section-body .item { display: block; }
+
+        /* Couleurs des sections */
+        .sec-blue   .doc-section-header { background: #bbdefb; color: #0d47a1; border-top: 1px solid #90caf9; }
+        .sec-yellow .doc-section-header { background: #fff9c4; color: #f57f17; border-top: 1px solid #f9e89a; }
+        .sec-red    .doc-section-header { background: #ffcdd2; color: #b71c1c; border-top: 1px solid #ef9a9a; }
+        .sec-teal   .doc-section-header { background: #b2dfdb; color: #004d40; border-top: 1px solid #80cbc4; }
+
+        /* ── MODAL EMAIL ── */
+        .email-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.6); z-index: 2000;
+            align-items: center; justify-content: center;
+            padding: 20px;
+        }
+        .email-overlay.show { display: flex; }
+        .email-box {
+            background: white; border-radius: 16px;
+            padding: 22px; width: 100%; max-width: 400px;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.25);
+        }
+        .email-box h3 { font-size: 1rem; color: #1a3a5c; margin-bottom: 6px; }
+        .email-box p  { font-size: 0.8rem; color: #64748b; margin-bottom: 16px; }
+        .email-box input[type="email"] {
+            width: 100%; padding: 12px 14px;
+            border: 1.5px solid #e2e8f0; border-radius: 9px;
+            font-size: 0.95rem; color: #1a202c; background: #f8fafc;
+            margin-bottom: 14px; -webkit-appearance: none;
+        }
+        .email-box input[type="email"]:focus {
+            outline: none; border-color: #2563a8; background: white;
+            box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
+        }
+        .email-box-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .btn-email-cancel {
+            padding: 12px; border: 2px solid #e2e8f0; border-radius: 9px;
+            background: white; color: #64748b; font-size: 0.9rem;
+            font-weight: 600; cursor: pointer;
+        }
+        .btn-email-send {
+            padding: 12px; border: none; border-radius: 9px;
+            background: linear-gradient(135deg, #1a3a5c, #2563a8);
+            color: white; font-size: 0.9rem; font-weight: 700; cursor: pointer;
+            box-shadow: 0 3px 10px rgba(37,99,168,0.3);
+        }
+
+        /* ── TOAST ── */
+        .toast {
+            position: fixed; bottom: 80px; left: 50%;
+            transform: translateX(-50%);
+            background: #1e293b; color: white;
+            padding: 10px 22px; border-radius: 20px;
+            font-size: 0.87rem; font-weight: 500;
+            z-index: 2000; opacity: 0;
+            transition: opacity 0.3s; white-space: nowrap;
+        }
+        .toast.show { opacity: 1; }
+
+    </style>
+</head>
+<body>
+
+<header>
+    <div>
+        <h1>📝 Rapport d'Intervention</h1>
+        <p>IMP360 — IT Management Project</p>
+    </div>
+    <button class="btn-historique" onclick="ouvrirHistorique()">📚 Historique</button>
+</header>
+
+<!-- ══ PANNEAU HISTORIQUE ══ -->
+<div class="historique-overlay" id="historiqueOverlay">
+    <div class="historique-panel">
+        <div class="historique-topbar">
+            <strong>📚 Historique des rapports</strong>
+            <button class="btn-close" onclick="fermerHistorique()">✕ Fermer</button>
+        </div>
+        <div id="historiqueList">
+            <div class="historique-empty">Chargement...</div>
+        </div>
+    </div>
+</div>
+
+<div class="container">
+
+    <!-- Informations générales -->
+    <div class="card">
+        <div class="card-title">Informations générales</div>
+        <div class="field">
+            <label>Site d'intervention</label>
+            <input type="text" id="site" placeholder="Nom du client / site...">
+        </div>
+        <div class="row">
+            <div class="field">
+                <label>Date</label>
+                <input type="date" id="date">
+            </div>
+            <div class="field">
+                <label>Motif d'intervention</label>
+                <input type="text" id="motif" placeholder="Ex : Panne, maintenance...">
+            </div>
+        </div>
+        <div class="row">
+            <div class="field">
+                <label>Heure de début</label>
+                <input type="time" id="heureDebut">
+            </div>
+            <div class="field">
+                <label>Heure de fin</label>
+                <input type="time" id="heureFin">
+            </div>
+        </div>
+        <div class="field">
+            <label>Technicien</label>
+            <input type="text" id="technicien" value="Kévin RICHER">
+        </div>
+    </div>
+
+    <!-- Type d'intervention -->
+    <div class="card">
+        <div class="card-title">Type d'intervention</div>
+        <div class="field">
+            <label>Catégorie</label>
+            <div class="type-group">
+                <button class="type-btn" onclick="selectType('Prestation(s)')">Prestation(s)</button>
+                <button class="type-btn active" onclick="selectType('Régie')">Régie</button>
+                <button class="type-btn" onclick="selectType('Ticket')">Ticket</button>
+            </div>
+        </div>
+        <div class="field" id="ticketField" style="display:none">
+            <label>Numéro de ticket</label>
+            <input type="text" id="numTicket" placeholder="Ex : TKT-2024-001">
+        </div>
+    </div>
+
+    <!-- Actions réalisées -->
+    <div class="card">
+        <div class="card-title">✅ Action(s) réalisée(s)</div>
+        <div id="listRealisees"></div>
+        <button class="btn-add" onclick="addItem('listRealisees','Action réalisée...')">+ Ajouter une action</button>
+    </div>
+
+    <!-- Actions restantes -->
+    <div class="card">
+        <div class="card-title">🔧 Action(s) restante(s) à réaliser</div>
+        <div id="listRestantes"></div>
+        <button class="btn-add" onclick="addItem('listRestantes','Action à réaliser...')">+ Ajouter une action</button>
+    </div>
+
+    <!-- Points particuliers -->
+    <div class="card">
+        <div class="card-title">📌 Point(s) particulier(s)</div>
+        <div id="listParticuliers"></div>
+        <button class="btn-add" onclick="addItem('listParticuliers','Point particulier...')">+ Ajouter un point</button>
+    </div>
+
+    <!-- Informations complémentaires -->
+    <div class="card">
+        <div class="card-title">📅 Information(s) complémentaire(s)</div>
+        <div id="listComplements"></div>
+        <button class="btn-add" onclick="addItem('listComplements','Information...')">+ Ajouter une information</button>
+    </div>
+
+    <button class="btn-validate" onclick="genererRapport()">✅ Valider et générer le rapport</button>
+    <button class="btn-reset" onclick="resetFormulaire()">🗑️ Réinitialiser le formulaire</button>
+
+</div>
+
+<!-- ══ MODAL RAPPORT ══ -->
+<div class="modal" id="modalRapport">
+    <div class="modal-content">
+
+        <div class="modal-topbar">
+            <strong>📄 Aperçu du compte-rendu</strong>
+            <button class="btn-close" onclick="fermerModal()">✕ Fermer</button>
+        </div>
+
+        <!-- Document visuel -->
+        <div class="doc" id="docRapport">
+
+            <!-- En-tête bleue -->
+            <div class="doc-header">
+                <span class="doc-header-icon">📄</span>
+                <span class="doc-header-title">Compte-rendu d'intervention</span>
+            </div>
+
+            <!-- Tableau informations -->
+            <table class="doc-info-table">
+                <tr>
+                    <td>
+                        <div class="field-label">Site d'intervention :</div>
+                        <div class="field-value" id="r-site"></div>
+                    </td>
+                    <td>
+                        <div class="field-label">Motif d'intervention :</div>
+                        <div class="field-value" id="r-motif"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <span class="field-label">Date : </span>
+                        <span class="field-value" id="r-date"></span>
+                    </td>
+                    <td>
+                        <div class="checkboxes" id="r-types"></div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <span class="field-label">Heure de début : </span>
+                        <span class="field-value" id="r-hdebut"></span>
+                    </td>
+                    <td>
+                        <span class="field-label">Numéro de ticket : </span>
+                        <span class="field-value" id="r-ticket"></span>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <span class="field-label">Heure de fin : </span>
+                        <span class="field-value" id="r-hfin"></span>
+                    </td>
+                    <td>
+                        <span class="field-label">Technicien : </span>
+                        <span class="field-value" id="r-technicien"></span>
+                    </td>
+                </tr>
+            </table>
+
+            <!-- Section Actions réalisées (bleu) -->
+            <div class="doc-section sec-blue">
+                <div class="doc-section-header">✅ Action(s) réalisée(s)</div>
+                <div class="doc-section-body" id="r-realisees"></div>
+            </div>
+
+            <!-- Section Actions restantes (jaune) -->
+            <div class="doc-section sec-yellow">
+                <div class="doc-section-header">🔧 Action(s) restante(s) à réaliser</div>
+                <div class="doc-section-body" id="r-restantes"></div>
+            </div>
+
+            <!-- Section Points particuliers (rouge) -->
+            <div class="doc-section sec-red">
+                <div class="doc-section-header">📌 Point(s) particulier(s)</div>
+                <div class="doc-section-body" id="r-particuliers"></div>
+            </div>
+
+            <!-- Section Informations complémentaires (teal) -->
+            <div class="doc-section sec-teal">
+                <div class="doc-section-header">📅 Information(s) complémentaire(s)</div>
+                <div class="doc-section-body" id="r-complements"></div>
+            </div>
+
+        </div><!-- /.doc -->
+
+        <!-- Boutons d'action -->
+        <div class="modal-actions">
+            <button class="btn-copy"  onclick="copierTexte()">📋 Copier</button>
+            <button class="btn-print" onclick="imprimerRapport()">🖨️ PDF</button>
+            <button class="btn-share" onclick="partagerRapport()">📤 Partager</button>
+        </div>
+
+    </div>
+</div>
+
+<!-- ══ MODAL EMAIL ══ -->
+<div class="email-overlay" id="emailOverlay">
+    <div class="email-box">
+        <h3>📧 Envoyer par mail</h3>
+        <p>Saisissez l'adresse du destinataire. Votre application mail s'ouvrira avec le rapport pré-rempli.</p>
+        <input type="email" id="emailDest" placeholder="destinataire@exemple.fr" autocomplete="email">
+        <div class="email-box-btns">
+            <button class="btn-email-cancel" onclick="fermerEmailModal()">Annuler</button>
+            <button class="btn-email-send"   onclick="envoyerMail()">✉️ Envoyer</button>
+        </div>
+    </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+    let typeIntervention = 'Régie';
+    let texteRapport = '';
+
+    /* ── Init ── */
+    (function init() {
+        const today = new Date();
+        document.getElementById('date').value = today.toISOString().split('T')[0];
+        document.getElementById('heureDebut').value = today.toTimeString().slice(0, 5);
+        addItem('listRealisees',   'Action réalisée...');
+        addItem('listRestantes',   'Action à réaliser...');
+        addItem('listParticuliers','Point particulier...');
+        addItem('listComplements', 'Information...');
+    })();
+
+    /* ── Type sélection ── */
+    function selectType(type) {
+        typeIntervention = type;
+        document.querySelectorAll('.type-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.textContent.trim() === type);
+        });
+        document.getElementById('ticketField').style.display = type === 'Ticket' ? 'block' : 'none';
+    }
+
+    /* ── Listes dynamiques ── */
+    function addItem(listId, placeholder) {
+        const container = document.getElementById(listId);
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.innerHTML = `
+            <input type="text" placeholder="${placeholder || 'Saisir...'}">
+            <button class="btn-remove" onclick="removeItem(this)">−</button>`;
+        container.appendChild(div);
+        // Ne pas voler le focus sur l'init
+        if (container.querySelectorAll('.list-item').length > 1 || document.readyState === 'complete') {
+            div.querySelector('input').focus();
+        }
+    }
+
+    function removeItem(btn) {
+        const container = btn.parentElement.parentElement;
+        if (container.querySelectorAll('.list-item').length > 1) {
+            btn.parentElement.remove();
+        } else {
+            btn.previousElementSibling.value = '';
+        }
+    }
+
+    function getListItems(listId) {
+        const items = [];
+        document.querySelectorAll(`#${listId} .list-item input`).forEach(inp => {
+            if (inp.value.trim()) items.push(inp.value.trim());
+        });
+        return items;
+    }
+
+    /* ── Formatage ── */
+    function formatDate(d) {
+        if (!d) return '—';
+        const [y,m,j] = d.split('-');
+        return `${j}/${m}/${y}`;
+    }
+
+    function renderListHTML(items) {
+        if (!items.length) return '<span style="color:#aaa">-</span>';
+        return items.map(i => `<span class="item">- ${escHTML(i)}</span>`).join('');
+    }
+
+    function renderListText(items) {
+        return items.length ? items.map(i => `- ${i}`).join('\n') : '-';
+    }
+
+    function escHTML(s) {
+        return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    /* ── Génération du rapport ── */
+    function genererRapport() {
+        const site      = document.getElementById('site').value.trim() || '—';
+        const date      = formatDate(document.getElementById('date').value);
+        const motif     = document.getElementById('motif').value.trim() || '—';
+        const hdebut    = document.getElementById('heureDebut').value || '—';
+        const hfin      = document.getElementById('heureFin').value || '—';
+        const numTicket = document.getElementById('numTicket').value.trim();
+
+        const technicien   = document.getElementById('technicien').value.trim() || '—';
+        const realisees    = getListItems('listRealisees');
+        const restantes    = getListItems('listRestantes');
+        const particuliers = getListItems('listParticuliers');
+        const complements  = getListItems('listComplements');
+
+        /* — Remplissage HTML du document visuel — */
+        document.getElementById('r-site').textContent   = site;
+        document.getElementById('r-motif').textContent  = motif;
+        document.getElementById('r-date').textContent   = date;
+        document.getElementById('r-hdebut').textContent = hdebut;
+        document.getElementById('r-hfin').textContent   = hfin;
+        document.getElementById('r-ticket').textContent     = (typeIntervention === 'Ticket' && numTicket) ? numTicket : '—';
+        document.getElementById('r-technicien').textContent = technicien;
+
+        // Cases à cocher
+        const types = ['Prestation(s)', 'Régie', 'Ticket'];
+        document.getElementById('r-types').innerHTML = types.map(t => `
+            <div class="cb-item">
+                <div class="cb-box ${t === typeIntervention ? 'checked' : ''}">
+                    ${t === typeIntervention ? '✓' : ''}
+                </div>
+                <span>${t}</span>
+            </div>`).join('');
+
+        // Sections
+        document.getElementById('r-realisees').innerHTML    = renderListHTML(realisees);
+        document.getElementById('r-restantes').innerHTML    = renderListHTML(restantes);
+        document.getElementById('r-particuliers').innerHTML = renderListHTML(particuliers);
+        document.getElementById('r-complements').innerHTML  = renderListHTML(complements);
+
+        /* — Version texte pour copier / partager — */
+        const cb = t => t === typeIntervention ? '☒' : '☐';
+        let txt = `📝 Compte-rendu d'intervention\n${'─'.repeat(38)}\n\n`;
+        txt += `Site d'intervention : ${site}\n`;
+        txt += `Date : ${date}\n`;
+        txt += `Motif d'intervention : ${motif}\n\n`;
+        txt += `Heure de début : ${hdebut}\n`;
+        txt += `${cb('Prestation(s)')} Prestation(s)   ${cb('Régie')} Régie   ${cb('Ticket')} Ticket\n`;
+        if (typeIntervention === 'Ticket' && numTicket) txt += `Numéro de ticket : ${numTicket}\n`;
+        txt += `Heure de fin : ${hfin}\n`;
+        txt += `Technicien : ${technicien}\n\n`;
+        txt += `${'─'.repeat(38)}\n\n`;
+        txt += `✅ Action(s) réalisée(s)\n${renderListText(realisees)}\n\n`;
+        txt += `🔧 Action(s) restante(s) à réaliser\n${renderListText(restantes)}\n\n`;
+        txt += `📌 Point(s) particulier(s)\n${renderListText(particuliers)}\n\n`;
+        txt += `📅 Information(s) complémentaire(s)\n${renderListText(complements)}`;
+        texteRapport = txt;
+
+        document.getElementById('modalRapport').classList.add('show');
+        document.getElementById('modalRapport').scrollTop = 0;
+
+        /* ── Sauvegarde dans Supabase ── */
+        const rapportData = {
+            site: site,
+            date: document.getElementById('date').value,
+            motif: motif,
+            heure_debut: hdebut,
+            heure_fin: hfin,
+            type_intervention: typeIntervention,
+            num_ticket: (typeIntervention === 'Ticket' && numTicket) ? numTicket : null,
+            technicien: technicien,
+            actions_realisees: realisees,
+            actions_restantes: restantes,
+            points_particuliers: particuliers,
+            complements: complements,
+            texte_rapport: texteRapport
+        };
+
+        if (editingRapportId) {
+            sb.from('rapports').update(rapportData).eq('id', editingRapportId).then(({ error }) => {
+                if (error) {
+                    console.error('Erreur mise à jour:', error);
+                    showToast('⚠️ Rapport généré mais non mis à jour');
+                } else {
+                    showToast('✅ Rapport mis à jour en base');
+                }
+                editingRapportId = null;
+            });
+        } else {
+            rapportData.id = 'r' + Date.now() + Math.random().toString(36).slice(2, 6);
+            sb.from('rapports').insert([rapportData]).then(({ error }) => {
+                if (error) {
+                    console.error('Erreur sauvegarde:', error);
+                    showToast('⚠️ Rapport généré mais non sauvegardé');
+                } else {
+                    showToast('✅ Rapport sauvegardé en base');
+                }
+            });
+        }
+    }
+
+    function fermerModal() {
+        document.getElementById('modalRapport').classList.remove('show');
+    }
+
+    /* ── Toast ── */
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    /* ── Copier texte ── */
+    function copierTexte() {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(texteRapport)
+                .then(() => showToast('✅ Rapport copié !'))
+                .catch(copierFallback);
+        } else { copierFallback(); }
+    }
+    function copierFallback() {
+        const ta = document.createElement('textarea');
+        ta.value = texteRapport;
+        ta.style.cssText = 'position:fixed;opacity:0';
+        document.body.appendChild(ta);
+        ta.focus(); ta.select();
+        try { document.execCommand('copy'); showToast('✅ Rapport copié !'); }
+        catch(e) { showToast('❌ Impossible de copier'); }
+        document.body.removeChild(ta);
+    }
+
+    /* ── Imprimer / PDF ── */
+    function imprimerRapport() {
+        const docHTML = document.getElementById('docRapport').outerHTML;
+        const win = window.open('', '_blank');
+        win.document.write(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Compte-rendu d'intervention</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Forcer l'impression des couleurs de fond */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  @page {
+    size: A4;
+    margin: 15mm 15mm 15mm 15mm;
+  }
+
+  body {
+    font-family: Arial, Helvetica, sans-serif;
+    background: white;
+    color: #1a202c;
+  }
+
+  .doc {
+    width: 100%;
+    border: 1.5px solid #bbb;
+    border-radius: 4px;
+    overflow: hidden;
+  }
+
+  /* ── En-tête bleue ── */
+  .doc-header {
+    background-color: #2196F3 !important;
+    color: white !important;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .doc-header-icon  { font-size: 1rem; }
+  .doc-header-title { font-size: 1rem; font-weight: 700; letter-spacing: 0.2px; }
+
+  /* ── Tableau infos ── */
+  .doc-info-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .doc-info-table td {
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    vertical-align: top;
+    border: 1px solid #d0d0d0;
+  }
+  .doc-info-table td:first-child { width: 48%; }
+  .field-label { font-weight: 700; color: #111; display: inline; }
+  .field-value { color: #333; display: inline; }
+
+  /* ── Cases à cocher ── */
+  .checkboxes { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 2px; }
+  .cb-item { display: flex; align-items: center; gap: 5px; font-size: 0.82rem; }
+  .cb-box {
+    width: 13px; height: 13px;
+    border: 1.5px solid #444;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.65rem; flex-shrink: 0;
+  }
+  .cb-box.checked {
+    background-color: #1a3a5c !important;
+    color: white !important;
+    border-color: #1a3a5c !important;
+  }
+
+  /* ── Sections colorées ── */
+  .doc-section { page-break-inside: avoid; }
+
+  .doc-section-header {
+    padding: 9px 14px;
+    font-size: 0.85rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    border-top: 1.5px solid transparent;
+  }
+  .doc-section-body {
+    padding: 10px 16px 14px;
+    font-size: 0.83rem;
+    line-height: 1.75;
+    color: #2d3748;
+    min-height: 32px;
+  }
+  .doc-section-body .item { display: block; }
+
+  .sec-blue   .doc-section-header { background-color: #bbdefb !important; color: #0d47a1 !important; border-top-color: #90caf9 !important; }
+  .sec-yellow .doc-section-header { background-color: #fff9c4 !important; color: #b45309 !important; border-top-color: #f9e89a !important; }
+  .sec-red    .doc-section-header { background-color: #ffcdd2 !important; color: #b71c1c !important; border-top-color: #ef9a9a !important; }
+  .sec-teal   .doc-section-header { background-color: #b2dfdb !important; color: #004d40 !important; border-top-color: #80cbc4 !important; }
+</style>
+</head>
+<body>
+${docHTML}
+<script>window.onload = function(){ window.print(); }<\/script>
+</body>
+</html>`);
+        win.document.close();
+    }
+
+    /* ── Partager → ouvre le modal email ── */
+    function partagerRapport() {
+        document.getElementById('emailDest').value = '';
+        document.getElementById('emailOverlay').classList.add('show');
+        setTimeout(() => document.getElementById('emailDest').focus(), 100);
+    }
+
+    function fermerEmailModal() {
+        document.getElementById('emailOverlay').classList.remove('show');
+    }
+
+    function envoyerMail() {
+        const dest = document.getElementById('emailDest').value.trim();
+        if (!dest) {
+            document.getElementById('emailDest').focus();
+            showToast('⚠️ Veuillez saisir une adresse mail');
+            return;
+        }
+        const sujet = encodeURIComponent("Compte-rendu d'intervention — IMP360");
+        const corps = encodeURIComponent(texteRapport);
+        window.location.href = `mailto:${dest}?subject=${sujet}&body=${corps}`;
+        fermerEmailModal();
+    }
+
+    /* ── Reset ── */
+    function resetFormulaire() {
+        if (!confirm('Réinitialiser tous les champs ?')) return;
+        ['site','motif','heureFin','numTicket'].forEach(id => document.getElementById(id).value = '');
+        document.getElementById('technicien').value = 'Kévin RICHER';
+        const now = new Date();
+        document.getElementById('date').value     = now.toISOString().split('T')[0];
+        document.getElementById('heureDebut').value = now.toTimeString().slice(0,5);
+        selectType('Régie');
+        ['listRealisees','listRestantes','listParticuliers','listComplements'].forEach(id => {
+            document.getElementById(id).innerHTML = '';
+        });
+        addItem('listRealisees',   'Action réalisée...');
+        addItem('listRestantes',   'Action à réaliser...');
+        addItem('listParticuliers','Point particulier...');
+        addItem('listComplements', 'Information...');
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        showToast('🗑️ Formulaire réinitialisé');
+    }
+
+    /* ══════════════════════════════════════════════════════
+       HISTORIQUE — Charger / Afficher / Modifier / Supprimer
+    ══════════════════════════════════════════════════════ */
+    let editingRapportId = null;
+
+    async function ouvrirHistorique() {
+        document.getElementById('historiqueOverlay').classList.add('show');
+        await chargerHistorique();
+    }
+
+    function fermerHistorique() {
+        document.getElementById('historiqueOverlay').classList.remove('show');
+    }
+
+    async function chargerHistorique() {
+        const container = document.getElementById('historiqueList');
+        container.innerHTML = '<div class="historique-empty">Chargement...</div>';
+
+        const { data, error } = await sb.from('rapports').select('*').order('created_at', { ascending: false });
+
+        if (error) {
+            container.innerHTML = '<div class="historique-empty">Erreur de chargement</div>';
+            return;
+        }
+
+        if (!data || data.length === 0) {
+            container.innerHTML = '<div class="historique-empty">Aucun rapport sauvegardé</div>';
+            return;
+        }
+
+        container.innerHTML = data.map(r => {
+            const dateAff = r.date ? r.date.split('-').reverse().join('/') : '—';
+            return `
+            <div class="hist-card">
+                <div class="hist-card-header">
+                    <span class="hist-card-site">${escHTML(r.site || 'Sans site')}</span>
+                    <span class="hist-card-date">${dateAff}</span>
+                </div>
+                <div class="hist-card-meta">
+                    <span>${escHTML(r.type_intervention || '')}</span>
+                    <span>${escHTML(r.technicien || '')}</span>
+                    <span>${r.heure_debut || ''} → ${r.heure_fin || ''}</span>
+                </div>
+                <div class="hist-card-meta" style="margin-top:4px;color:#94a3b8;">
+                    ${escHTML(r.motif || '')}
+                </div>
+                <div class="hist-card-actions">
+                    <button class="hist-btn hist-btn-view" onclick="voirRapport('${r.id}')">👁️ Voir</button>
+                    <button class="hist-btn hist-btn-edit" onclick="chargerDansFormulaire('${r.id}')">✏️ Modifier</button>
+                    <button class="hist-btn hist-btn-delete" onclick="supprimerRapport('${r.id}')">🗑️ Supprimer</button>
+                </div>
+            </div>`;
+        }).join('');
+    }
+
+    /* ── Voir un rapport (ouvre le modal aperçu) ── */
+    async function voirRapport(id) {
+        const { data, error } = await sb.from('rapports').select('*').eq('id', id).single();
+        if (error || !data) { showToast('⚠️ Rapport introuvable'); return; }
+
+        const r = data;
+        const dateAff = r.date ? r.date.split('-').reverse().join('/') : '—';
+        const realisees    = r.actions_realisees || [];
+        const restantes    = r.actions_restantes || [];
+        const particuliers = r.points_particuliers || [];
+        const complements  = r.complements || [];
+
+        document.getElementById('r-site').textContent   = r.site || '—';
+        document.getElementById('r-motif').textContent   = r.motif || '—';
+        document.getElementById('r-date').textContent    = dateAff;
+        document.getElementById('r-hdebut').textContent  = r.heure_debut || '—';
+        document.getElementById('r-hfin').textContent    = r.heure_fin || '—';
+        document.getElementById('r-ticket').textContent  = r.num_ticket || '—';
+        document.getElementById('r-technicien').textContent = r.technicien || '—';
+
+        const types = ['Prestation(s)', 'Régie', 'Ticket'];
+        document.getElementById('r-types').innerHTML = types.map(t => `
+            <div class="cb-item">
+                <div class="cb-box ${t === r.type_intervention ? 'checked' : ''}">
+                    ${t === r.type_intervention ? '✓' : ''}
+                </div>
+                <span>${t}</span>
+            </div>`).join('');
+
+        document.getElementById('r-realisees').innerHTML    = renderListHTML(realisees);
+        document.getElementById('r-restantes').innerHTML    = renderListHTML(restantes);
+        document.getElementById('r-particuliers').innerHTML = renderListHTML(particuliers);
+        document.getElementById('r-complements').innerHTML  = renderListHTML(complements);
+
+        texteRapport = r.texte_rapport || '';
+
+        fermerHistorique();
+        document.getElementById('modalRapport').classList.add('show');
+        document.getElementById('modalRapport').scrollTop = 0;
+    }
+
+    /* ── Charger un rapport dans le formulaire pour modification ── */
+    async function chargerDansFormulaire(id) {
+        const { data, error } = await sb.from('rapports').select('*').eq('id', id).single();
+        if (error || !data) { showToast('⚠️ Rapport introuvable'); return; }
+
+        const r = data;
+        editingRapportId = r.id;
+
+        document.getElementById('site').value       = r.site || '';
+        document.getElementById('date').value        = r.date || '';
+        document.getElementById('motif').value       = r.motif || '';
+        document.getElementById('heureDebut').value  = r.heure_debut || '';
+        document.getElementById('heureFin').value    = r.heure_fin || '';
+        document.getElementById('technicien').value  = r.technicien || '';
+        document.getElementById('numTicket').value   = r.num_ticket || '';
+
+        selectType(r.type_intervention || 'Régie');
+
+        // Remplir les listes
+        function fillList(listId, items, placeholder) {
+            document.getElementById(listId).innerHTML = '';
+            if (items && items.length) {
+                items.forEach(item => {
+                    addItem(listId, placeholder);
+                    const inputs = document.querySelectorAll(`#${listId} .list-item input`);
+                    inputs[inputs.length - 1].value = item;
+                });
+            } else {
+                addItem(listId, placeholder);
+            }
+        }
+
+        fillList('listRealisees',    r.actions_realisees,    'Action réalisée...');
+        fillList('listRestantes',    r.actions_restantes,    'Action à réaliser...');
+        fillList('listParticuliers', r.points_particuliers,  'Point particulier...');
+        fillList('listComplements',  r.complements,          'Information...');
+
+        fermerHistorique();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        showToast('✏️ Rapport chargé — modifiez puis validez');
+    }
+
+    /* ── Supprimer un rapport ── */
+    async function supprimerRapport(id) {
+        if (!confirm('Supprimer ce rapport définitivement ?')) return;
+        const { error } = await sb.from('rapports').delete().eq('id', id);
+        if (error) { showToast('⚠️ Erreur de suppression'); return; }
+        showToast('🗑️ Rapport supprimé');
+        await chargerHistorique();
+    }
+</script>
+
+</body>
+</html>

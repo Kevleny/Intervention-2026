@@ -1,0 +1,1495 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TechLab">
+<meta name="theme-color" content="#0b0f1a">
+
+<!-- ═══════════════════════════════════════════════════════
+     SUPABASE SDK
+════════════════════════════════════════════════════════ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+window._fbCache = window._fbCache || {};
+
+function keyToTable(key) {
+  const MAP = {
+    'fieldops_interventions': 'interventions',
+    'fieldops_techs':         'techs',
+    'fieldops_sites':         'sites',
+  };
+  return MAP[key] || null;
+}
+
+async function fbLoad(key, def) {
+  if (window._fbCache[key] !== undefined) return window._fbCache[key];
+  try {
+    const table = keyToTable(key);
+    if (table) {
+      const { data, error } = await sb.from(table).select('*');
+      if (error) throw error;
+      const arr = data || [];
+      window._fbCache[key] = arr;
+      return arr.length > 0 ? arr : def;
+    }
+    if (key.startsWith('fieldops_param_')) {
+      const paramKey = 'params_' + key.replace('fieldops_param_', '');
+      const { data, error } = await sb.from('settings').select('value').eq('key', paramKey).single();
+      if (error || !data) return def;
+      window._fbCache[key] = data.value;
+      return data.value;
+    }
+    return def;
+  } catch(e) { return def; }
+}
+
+async function fbSave(key, val) {
+  window._fbCache[key] = val;
+  try {
+    const table = keyToTable(key);
+    if (table) {
+      if (val.length > 0) {
+        const { error } = await sb.from(table).upsert(val);
+        if (error) throw error;
+      }
+      const { data: existing } = await sb.from(table).select('id');
+      const toDelete = (existing || []).map(r => r.id).filter(id => !val.find(i => i.id === id));
+      if (toDelete.length > 0) await sb.from(table).delete().in('id', toDelete);
+    } else if (key.startsWith('fieldops_param_')) {
+      const paramKey = 'params_' + key.replace('fieldops_param_', '');
+      await sb.from('settings').upsert({ key: paramKey, value: val });
+    }
+  } catch(e) { console.warn('fbSave:', e); }
+}
+
+// Temps réel — interventions mises à jour automatiquement
+function setupMobileSync() {
+  sb.channel('interventions-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'interventions' }, async () => {
+      const { data } = await sb.from('interventions').select('*');
+      const arr = data || [];
+      window._fbCache['fieldops_interventions'] = arr;
+      interventions = arr;
+      updateBadges();
+      const activeTab = document.querySelector('.nav-tab.active')?.id?.replace('tab-','');
+      if (activeTab && !document.getElementById('panel').classList.contains('open'))
+        if (activeTab === 'today') renderToday();
+        else if (activeTab === 'list') renderList();
+    })
+    .subscribe();
+
+  sb.channel('techs-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'techs' }, async () => {
+      const { data } = await sb.from('techs').select('*');
+      window._fbCache['fieldops_techs'] = data || []; techs = data || [];
+    })
+    .subscribe();
+
+  sb.channel('sites-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'sites' }, async () => {
+      const { data } = await sb.from('sites').select('*');
+      window._fbCache['fieldops_sites'] = data || []; sites = data || [];
+    })
+    .subscribe();
+}
+
+window.fbLoad = fbLoad;
+window.fbSave = fbSave;
+
+// Bootstrap mobile
+async function bootstrap() {
+  try {
+    window._fbCache['fieldops_techs']         = await fbLoad('fieldops_techs', []);
+    window._fbCache['fieldops_sites']         = await fbLoad('fieldops_sites', []);
+    window._fbCache['fieldops_interventions'] = await fbLoad('fieldops_interventions', []);
+    const loader = document.getElementById('mob-fb-loader');
+    if (loader) loader.remove();
+    window._fbReady = true;
+    document.dispatchEvent(new CustomEvent('firebase-ready'));
+    setupMobileSync();
+  } catch(e) {
+    const loader = document.getElementById('mob-fb-loader');
+    if (loader) loader.innerHTML = '<div style="color:var(--red);font-size:13px;text-align:center;padding:20px">❌ Erreur Supabase<br><small>' + e.message + '</small></div>';
+  }
+}
+document.addEventListener('DOMContentLoaded', bootstrap);
+</script>
+<title>TechLab Apps · Terrain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:      #0b0f1a;
+  --bg2:     #111827;
+  --bg3:     #1a2235;
+  --bg4:     #1f2d45;
+  --border:  #1f2d45;
+  --accent:  #00d4ff;
+  --green:   #00e676;
+  --orange:  #ff9800;
+  --red:     #f44336;
+  --purple:  #7c4dff;
+  --text:    #e8edf5;
+  --text2:   #a0aec0;
+  --text3:   #4a5a6e;
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+html, body {
+  height: 100%; width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  overflow: hidden;
+  touch-action: manipulation;
+}
+
+/* ── LAYOUT ──────────────────────────────── */
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding-top: var(--safe-top);
+  padding-bottom: var(--safe-bot);
+}
+
+/* ── TOPBAR ──────────────────────────────── */
+#topbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  position: relative;
+  z-index: 10;
+}
+#topbar-logo {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--accent);
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+#topbar-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  text-align: center;
+}
+#topbar-action {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ── CONTENT ──────────────────────────────── */
+#content {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 0;
+}
+
+/* ── BOTTOM NAV ──────────────────────────── */
+#bottom-nav {
+  flex-shrink: 0;
+  display: flex;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+}
+.nav-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 4px;
+  gap: 3px;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: var(--text3);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  transition: color 0.15s;
+  position: relative;
+  min-height: 56px;
+}
+.nav-tab .icon { font-size: 20px; line-height: 1; }
+.nav-tab.active { color: var(--accent); }
+.nav-tab.active::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 20%; right: 20%;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 0 0 2px 2px;
+}
+.nav-badge {
+  position: absolute;
+  top: 6px; right: calc(50% - 16px);
+  background: var(--red);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+}
+
+/* ── VIEWS ──────────────────────────────── */
+.view { display: none; }
+.view.active { display: block; }
+
+/* ── SECTION / CARD ──────────────────────── */
+.section { padding: 12px 14px; }
+.card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.card-body { padding: 12px 14px; }
+.card-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(31,45,69,0.6);
+  cursor: pointer;
+  transition: background 0.12s;
+  -webkit-tap-highlight-color: transparent;
+}
+.card-row:last-child { border-bottom: none; }
+.card-row:active { background: var(--bg3); }
+
+/* ── STAT CARDS ──────────────────────────── */
+.stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 12px 14px 4px;
+}
+.stat-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+}
+.stat-val {
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  margin-bottom: 4px;
+}
+.stat-lbl { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ── BADGES ──────────────────────────────── */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.badge-new      { color: var(--accent); border-color: var(--accent); background: rgba(0,212,255,0.08); }
+.badge-open     { color: var(--orange); border-color: var(--orange); background: rgba(255,152,0,0.08); }
+.badge-progress { color: var(--purple); border-color: var(--purple); background: rgba(124,77,255,0.08); }
+.badge-done     { color: var(--green);  border-color: var(--green);  background: rgba(0,230,118,0.08); }
+.badge-closed   { color: var(--text3);  border-color: var(--text3);  background: rgba(74,90,110,0.08); }
+.badge-urgent   { color: var(--red);    border-color: var(--red);    background: rgba(244,67,54,0.08); }
+.badge-high     { color: var(--orange); border-color: var(--orange); background: rgba(255,152,0,0.08); }
+.badge-medium   { color: var(--accent); border-color: var(--accent); background: rgba(0,212,255,0.08); }
+.badge-low      { color: var(--text3);  border-color: var(--text3);  background: rgba(74,90,110,0.08); }
+
+/* ── AVATAR ──────────────────────────────── */
+.avatar {
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'IBM Plex Mono', monospace;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+/* ── FORMS ──────────────────────────────── */
+.form-group { margin-bottom: 14px; }
+.form-group label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text3);
+  margin-bottom: 6px;
+}
+.form-group input,
+.form-group select,
+.form-group textarea {
+  width: 100%;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-size: 15px;
+  padding: 12px 14px;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: border-color 0.15s;
+}
+.form-group input:focus,
+.form-group select:focus,
+.form-group textarea:focus {
+  border-color: var(--accent);
+}
+.form-group textarea { min-height: 100px; resize: vertical; line-height: 1.5; }
+.form-group select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%234a5a6e' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 14px center;
+  padding-right: 36px;
+}
+.form-row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+/* ── BUTTONS ──────────────────────────────── */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: none;
+  border-radius: 8px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.1s;
+  -webkit-tap-highlight-color: transparent;
+}
+.btn:active { opacity: 0.8; transform: scale(0.97); }
+.btn-primary {
+  background: var(--accent);
+  color: #0b0f1a;
+  font-size: 15px;
+  padding: 14px 20px;
+  width: 100%;
+}
+.btn-green {
+  background: var(--green);
+  color: #0b0f1a;
+  font-size: 15px;
+  padding: 14px 20px;
+  width: 100%;
+}
+.btn-ghost {
+  background: var(--bg3);
+  color: var(--text2);
+  border: 1px solid var(--border);
+  font-size: 14px;
+  padding: 12px 16px;
+}
+.btn-danger {
+  background: rgba(244,67,54,0.12);
+  color: var(--red);
+  border: 1px solid rgba(244,67,54,0.3);
+  font-size: 14px;
+  padding: 12px 16px;
+}
+.btn-icon {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.btn-icon:active { opacity: 0.7; }
+
+/* ── SLIDE PANEL (bottom sheet) ──────────── */
+#panel-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 100;
+  backdrop-filter: blur(3px);
+}
+#panel-overlay.open { display: block; }
+#panel {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  background: var(--bg2);
+  border-radius: 16px 16px 0 0;
+  z-index: 101;
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: var(--safe-bot);
+}
+#panel.open { transform: translateY(0); }
+.panel-handle {
+  width: 36px; height: 4px;
+  background: var(--bg4);
+  border-radius: 2px;
+  margin: 10px auto 4px;
+  flex-shrink: 0;
+}
+.panel-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.panel-head h2 { font-size: 16px; font-weight: 600; flex: 1; }
+.panel-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 16px;
+}
+.panel-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* ── STATUS QUICK-CHANGE ──────────────────── */
+.status-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.status-btn {
+  padding: 12px 8px;
+  border-radius: 8px;
+  border: 1.5px solid;
+  background: transparent;
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s;
+  color: var(--text2);
+  border-color: var(--border);
+}
+.status-btn.selected { color: #0b0f1a !important; }
+.status-btn:active { transform: scale(0.96); }
+
+/* ── SEARCH BAR ──────────────────────────── */
+.search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: var(--bg3);
+  border-bottom: 1px solid var(--border);
+}
+.search-bar input {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 15px;
+  font-family: 'IBM Plex Sans', sans-serif;
+  outline: none;
+}
+.search-bar .search-icon { color: var(--text3); font-size: 16px; flex-shrink: 0; }
+
+/* ── FILTER CHIPS ─────────────────────────── */
+.filter-chips {
+  display: flex;
+  gap: 6px;
+  padding: 8px 14px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--border);
+}
+.filter-chips::-webkit-scrollbar { display: none; }
+.chip {
+  flex-shrink: 0;
+  padding: 5px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text2);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.12s;
+}
+.chip.active {
+  background: rgba(0,212,255,0.12);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── EMPTY STATE ──────────────────────────── */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 24px;
+  gap: 10px;
+  text-align: center;
+}
+.empty .icon { font-size: 40px; opacity: 0.4; }
+.empty p { font-size: 13px; color: var(--text3); }
+
+/* ── TODAY SECTION HEADER ─────────────────── */
+.section-header {
+  padding: 14px 14px 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: var(--text3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.section-header span { color: var(--accent); }
+
+/* ── FAB ──────────────────────────────────── */
+#fab {
+  position: fixed;
+  bottom: calc(70px + var(--safe-bot));
+  right: 16px;
+  width: 56px; height: 56px;
+  border-radius: 16px;
+  background: var(--accent);
+  color: #0b0f1a;
+  border: none;
+  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 20px rgba(0,212,255,0.35);
+  z-index: 50;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+#fab:active { transform: scale(0.92); box-shadow: 0 2px 10px rgba(0,212,255,0.2); }
+
+/* ── TOAST ────────────────────────────────── */
+#toast {
+  position: fixed;
+  bottom: calc(76px + var(--safe-bot));
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 10px 18px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0;
+  transition: all 0.25s;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 200;
+  max-width: calc(100vw - 32px);
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.success { border-color: var(--green); color: var(--green); }
+#toast.error { border-color: var(--red); color: var(--red); }
+
+/* ── INTERVENTION DETAIL ──────────────────── */
+.detail-block {
+  background: var(--bg3);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.detail-block .lbl {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  color: var(--text3);
+  margin-bottom: 4px;
+}
+.detail-block .val {
+  font-size: 14px;
+  color: var(--text);
+  line-height: 1.4;
+}
+.detail-row {
+  display: flex;
+  gap: 8px;
+}
+.detail-row .detail-block { flex: 1; }
+
+/* ── PLANNING DAY ──────────────────────────── */
+.day-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin: 0 14px 10px;
+  overflow: hidden;
+}
+.day-header {
+  padding: 10px 14px;
+  background: var(--bg3);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.day-name { font-size: 13px; font-weight: 600; }
+.day-date { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--text3); }
+
+/* ── URGENCY PILL ─────────────────────────── */
+.urgent-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  flex-shrink: 0;
+  box-shadow: 0 0 6px var(--red);
+}
+
+/* ── SWIPE ACTIONS hint ───────────────────── */
+.swipe-hint {
+  font-size: 10px;
+  color: var(--text3);
+  text-align: center;
+  padding: 4px 0 8px;
+  font-family: 'IBM Plex Mono', monospace;
+}
+</style>
+</head>
+<body>
+<div id="app">
+<!-- Supabase loader -->
+<div id="mob-fb-loader" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px">
+  <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;color:var(--accent)">⬡ TechLab</div>
+  <div style="font-size:12px;color:var(--text3)">Connexion en cours…</div>
+  <div style="width:120px;height:2px;background:var(--border);border-radius:2px;overflow:hidden">
+    <div style="height:100%;width:60%;background:var(--accent);animation:pulse 1s ease-in-out infinite alternate"></div>
+  </div>
+</div>
+<style>@keyframes pulse { from{opacity:0.3} to{opacity:1} }</style>
+
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <div id="topbar-logo">⬡ TechLab</div>
+    <div id="topbar-title">Terrain</div>
+    <div id="topbar-action"></div>
+  </div>
+
+  <!-- CONTENT AREA -->
+  <div id="content">
+
+    <!-- ══ VUE AUJOURD'HUI ══ -->
+    <div id="view-today" class="view active">
+      <div class="stats-grid" id="today-stats"></div>
+      <div id="today-urgent-section"></div>
+      <div class="section-header">Mes interventions du jour <span id="today-count"></span></div>
+      <div id="today-list" class="section"></div>
+    </div>
+
+    <!-- ══ VUE TOUTES LES INTERVENTIONS ══ -->
+    <div id="view-list" class="view">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input type="text" id="search-input" placeholder="Rechercher..." oninput="filterList()">
+        <button class="btn-icon" onclick="clearSearch()" id="search-clear" style="display:none">✕</button>
+      </div>
+      <div class="filter-chips" id="filter-chips"></div>
+      <div id="list-content"></div>
+    </div>
+
+    <!-- ══ VUE PLANNING SEMAINE ══ -->
+    <div id="view-planning" class="view">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px 8px">
+        <button class="btn-icon" onclick="planPrev()">‹</button>
+        <div style="text-align:center">
+          <div style="font-size:14px;font-weight:600" id="plan-week-label"></div>
+          <div style="font-size:11px;color:var(--text3)" id="plan-week-sub"></div>
+        </div>
+        <button class="btn-icon" onclick="planNext()">›</button>
+      </div>
+      <div id="planning-content"></div>
+    </div>
+
+    <!-- ══ VUE PROFIL TECH ══ -->
+    <div id="view-profile" class="view">
+      <div style="padding:20px 14px 10px">
+        <div style="display:flex;align-items:center;gap:14px;margin-bottom:20px">
+          <div id="profile-avatar" style="width:60px;height:60px;border-radius:16px;background:rgba(0,212,255,0.1);border:2px solid var(--accent);display:flex;align-items:center;justify-content:center;font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:600;color:var(--accent)">?</div>
+          <div>
+            <div id="profile-name" style="font-size:18px;font-weight:600">Non sélectionné</div>
+            <div id="profile-role" style="font-size:12px;color:var(--text3);margin-top:2px"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Technicien actif</label>
+          <select id="profile-tech-select" onchange="changeTech()">
+            <option value="">-- Sélectionner --</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:0 14px">
+        <div class="stats-grid" id="profile-stats" style="padding:0;margin-bottom:16px"></div>
+      </div>
+      <div class="section-header" style="margin-top:4px">Mes interventions récentes</div>
+      <div id="profile-recent" class="section"></div>
+    </div>
+
+  </div>
+
+  <!-- FAB -->
+  <button id="fab" onclick="openNew()">+</button>
+
+  <!-- BOTTOM NAV -->
+  <div id="bottom-nav">
+    <button class="nav-tab active" onclick="showTab('today')" id="tab-today">
+      <span class="nav-badge" id="badge-urgent" style="display:none">!</span>
+      <span class="icon">◉</span>
+      Aujourd'hui
+    </button>
+    <button class="nav-tab" onclick="showTab('list')" id="tab-list">
+      <span class="nav-badge" id="badge-open">0</span>
+      <span class="icon">▤</span>
+      Interventions
+    </button>
+    <button class="nav-tab" onclick="showTab('planning')" id="tab-planning">
+      <span class="icon">◫</span>
+      Planning
+    </button>
+    <button class="nav-tab" onclick="showTab('profile')" id="tab-profile">
+      <span class="icon">◈</span>
+      Profil
+    </button>
+  </div>
+</div>
+
+<!-- ══ PANEL INTERVENTION ══ -->
+<div id="panel-overlay" onclick="closePanel()"></div>
+<div id="panel">
+  <div class="panel-handle"></div>
+  <div class="panel-head">
+    <h2 id="panel-title">Nouvelle intervention</h2>
+    <button class="btn-icon" onclick="closePanel()">✕</button>
+  </div>
+  <div class="panel-body" id="panel-body"></div>
+  <div class="panel-footer" id="panel-footer"></div>
+</div>
+
+<!-- TOAST -->
+<div id="toast"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  DATA STORE — Firebase (cache local synchronisé)
+// ════════════════════════════════════════════════════════════
+function load(key, def) {
+  const PARAM_DEF = {
+    'fieldops_param_cat':      ['Réseau','Serveur','Poste de travail','Imprimante','Sécurité','Logiciel','Téléphonie','Autre'],
+    'fieldops_param_status':   ['Nouveau','Ouvert','En cours','Terminé','Clôturé'],
+    'fieldops_param_priority': ['Urgent','Haute','Moyenne','Basse'],
+  };
+  if (key === 'mobile_active_tech') {
+    try { return localStorage.getItem(key) || def; } catch { return def; }
+  }
+  const cached = window._fbCache?.[key];
+  if (cached !== undefined) return cached;
+  return PARAM_DEF[key] !== undefined ? PARAM_DEF[key] : def;
+}
+
+function save(key, val) {
+  if (key === 'mobile_active_tech') {
+    try { localStorage.setItem(key, val); } catch {}
+    return;
+  }
+  if (!window._fbCache) window._fbCache = {};
+  window._fbCache[key] = val;
+  if (window.fbSave) window.fbSave(key, val).catch(e => console.warn('save:', e));
+}
+
+const PARAM_DEFAULTS = {
+  cat:      ['Réseau','Serveur','Poste de travail','Imprimante','Sécurité','Logiciel','Téléphonie','Autre'],
+  status:   ['Nouveau','Ouvert','En cours','Terminé','Clôturé'],
+  priority: ['Urgent','Haute','Moyenne','Basse'],
+};
+const COLORS = ['#00d4ff','#00e676','#ff9800','#7c4dff','#f44336','#ff6d00','#1de9b6','#e040fb'];
+const STATUS_COLORS = {
+  'Nouveau':'#00d4ff','Ouvert':'#ff9800','En cours':'#7c4dff','Terminé':'#00e676','Clôturé':'#4a5a6e'
+};
+const PRIO_COLORS = { 'Urgent':'#f44336','Haute':'#ff9800','Moyenne':'#00d4ff','Basse':'#4a5a6e' };
+
+function getParam(k)  { return load('fieldops_param_'+k, PARAM_DEFAULTS[k]); }
+function uid() { return 'i' + Date.now() + Math.random().toString(36).slice(2,6); }
+
+let interventions = [];
+let techs         = [];
+let sites         = [];
+let activeTechId  = load('mobile_active_tech', '');
+let planOffset    = 0;
+let currentFilter = 'all';
+
+function reload() {
+  interventions = load('fieldops_interventions', []);
+  techs         = load('fieldops_techs', []);
+  sites         = load('fieldops_sites', []);
+}
+
+// ════════════════════════════════════════════════════════════
+//  UTILS
+// ════════════════════════════════════════════════════════════
+function getTech(id)  { return techs.find(t => t.id === id); }
+function getSite(id)  { return sites.find(s => s.id === id); }
+function fmtDate(d)   { if (!d) return '—'; const p = d.split('-'); return `${p[2]}/${p[1]}/${p[0]}`; }
+function todayStr()   { return new Date().toISOString().split('T')[0]; }
+function initials(f,l){ return ((f||'?')[0]+(l||'?')[0]).toUpperCase(); }
+
+function avatar(id, size=36) {
+  const t = getTech(id);
+  const bg = t ? t.color : '#4a5a6e';
+  const txt = t ? initials(t.first, t.last) : '?';
+  return `<span class="avatar" style="width:${size}px;height:${size}px;background:${bg}20;border:2px solid ${bg};color:${bg};font-size:${Math.round(size*0.38)}px;font-family:'IBM Plex Mono',monospace;font-weight:600">${txt}</span>`;
+}
+
+function statusBadge(s) {
+  const map = { 'Nouveau':'badge-new','Ouvert':'badge-open','En cours':'badge-progress','Terminé':'badge-done','Clôturé':'badge-closed' };
+  const icons = { 'Nouveau':'◎','Ouvert':'◉','En cours':'◌','Terminé':'✓','Clôturé':'✗' };
+  return `<span class="badge ${map[s]||'badge-new'}">${icons[s]||'●'} ${s}</span>`;
+}
+function priorityBadge(p) {
+  const map = { 'Urgent':'badge-urgent','Haute':'badge-high','Moyenne':'badge-medium','Basse':'badge-low','Urgente':'badge-urgent' };
+  return `<span class="badge ${map[p]||'badge-medium'}">${p}</span>`;
+}
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  setTimeout(() => { t.className = ''; }, 2800);
+}
+
+// ════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ════════════════════════════════════════════════════════════
+function showTab(name) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  document.getElementById('tab-'+name).classList.add('active');
+  document.getElementById('topbar-title').textContent =
+    {today:'Aujourd\'hui',list:'Interventions',planning:'Planning',profile:'Mon profil'}[name];
+  document.getElementById('topbar-action').innerHTML =
+    name === 'today' ? `<button class="btn-icon" onclick="openNew()" style="background:var(--accent);color:#0b0f1a;border:none">+</button>` : '';
+  reload();
+  if (name === 'today')    renderToday();
+  if (name === 'list')     renderList();
+  if (name === 'planning') renderPlanning();
+  if (name === 'profile')  renderProfile();
+  updateBadges();
+}
+
+function updateBadges() {
+  const open   = interventions.filter(i => ['Nouveau','Ouvert','En cours'].includes(i.status)).length;
+  const urgent = interventions.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+  document.getElementById('badge-open').textContent = open;
+  const ub = document.getElementById('badge-urgent');
+  ub.style.display = urgent > 0 ? 'flex' : 'none';
+  ub.textContent = urgent;
+}
+
+// ════════════════════════════════════════════════════════════
+//  TODAY VIEW
+// ════════════════════════════════════════════════════════════
+function renderToday() {
+  const today = todayStr();
+  const all   = interventions;
+  const todayItems = all.filter(i => i.date === today);
+  const open   = all.filter(i => ['Nouveau','Ouvert','En cours'].includes(i.status)).length;
+  const urgent = all.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+  const doneToday = todayItems.filter(i => ['Terminé','Clôturé'].includes(i.status)).length;
+
+  document.getElementById('today-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--accent)">${open}</div>
+      <div class="stat-lbl">En attente</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--red)">${urgent}</div>
+      <div class="stat-lbl">Urgentes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--orange)">${todayItems.length}</div>
+      <div class="stat-lbl">Auj. planifiées</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--green)">${doneToday}</div>
+      <div class="stat-lbl">Auj. clôturées</div>
+    </div>`;
+
+  // Urgentes non clôturées
+  const urgentItems = all.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status));
+  const urgentSection = document.getElementById('today-urgent-section');
+  if (urgentItems.length > 0) {
+    urgentSection.innerHTML = `
+      <div class="section-header">🔴 Urgences actives <span>${urgentItems.length}</span></div>
+      <div class="section">${urgentItems.map(i => interventionRow(i, true)).join('')}</div>`;
+  } else {
+    urgentSection.innerHTML = '';
+  }
+
+  document.getElementById('today-count').textContent = todayItems.length;
+  const listEl = document.getElementById('today-list');
+  if (todayItems.length === 0) {
+    listEl.innerHTML = `<div class="empty"><div class="icon">📅</div><p>Aucune intervention planifiée aujourd'hui</p></div>`;
+  } else {
+    listEl.innerHTML = todayItems.map(i => interventionRow(i)).join('');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  LIST VIEW
+// ════════════════════════════════════════════════════════════
+function renderList() {
+  // Build filter chips
+  const chips = document.getElementById('filter-chips');
+  const filters = ['all', ...getParam('status')];
+  const labels  = { all: 'Tout' };
+  chips.innerHTML = filters.map(f => `
+    <div class="chip ${currentFilter===f?'active':''}" onclick="setFilter('${f}')">${labels[f]||f}</div>
+  `).join('');
+  applyFilter();
+}
+
+function setFilter(f) {
+  currentFilter = f;
+  renderList();
+}
+
+function filterList() {
+  applyFilter();
+  const q = document.getElementById('search-input').value;
+  document.getElementById('search-clear').style.display = q ? 'flex' : 'none';
+}
+
+function clearSearch() {
+  document.getElementById('search-input').value = '';
+  document.getElementById('search-clear').style.display = 'none';
+  applyFilter();
+}
+
+function applyFilter() {
+  const q = (document.getElementById('search-input')?.value || '').toLowerCase();
+  let data = [...interventions];
+  if (currentFilter !== 'all') data = data.filter(i => i.status === currentFilter);
+  if (q) data = data.filter(i =>
+    (i.title||'').toLowerCase().includes(q) ||
+    (i.equip||'').toLowerCase().includes(q) ||
+    (getSite(i.site)?.name||'').toLowerCase().includes(q)
+  );
+  // Sort: urgent first, then by date desc
+  data.sort((a,b) => {
+    const au = a.priority === 'Urgent' && !['Terminé','Clôturé'].includes(a.status);
+    const bu = b.priority === 'Urgent' && !['Terminé','Clôturé'].includes(b.status);
+    if (au && !bu) return -1;
+    if (!au && bu) return  1;
+    return (b.date||'') > (a.date||'') ? 1 : -1;
+  });
+  const el = document.getElementById('list-content');
+  if (data.length === 0) {
+    el.innerHTML = `<div class="empty"><div class="icon">🔍</div><p>Aucune intervention trouvée</p></div>`;
+  } else {
+    el.innerHTML = `<div class="section">${data.map(i => interventionRow(i)).join('')}</div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  INTERVENTION ROW (shared)
+// ════════════════════════════════════════════════════════════
+function interventionRow(i, compact=false) {
+  const site = getSite(i.site);
+  const isUrgent = i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status);
+  return `
+  <div class="card" onclick="openDetail('${i.id}')" style="${isUrgent ? 'border-color:rgba(244,67,54,0.4)' : ''}">
+    <div class="card-body">
+      <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:8px">
+        ${isUrgent ? '<div class="urgent-dot" style="margin-top:5px"></div>' : ''}
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600;line-height:1.3;margin-bottom:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.title}</div>
+          <div style="font-size:12px;color:var(--text3)">${site ? site.name : '—'} · ${fmtDate(i.date)}</div>
+        </div>
+        ${avatar(i.tech, 32)}
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+        ${statusBadge(i.status)}
+        ${priorityBadge(i.priority)}
+        ${i.category ? `<span style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace">${i.category}</span>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  PLANNING VIEW
+// ════════════════════════════════════════════════════════════
+function planPrev() { planOffset--; renderPlanning(); }
+function planNext() { planOffset++; renderPlanning(); }
+
+function renderPlanning() {
+  const today = new Date();
+  today.setDate(today.getDate() + planOffset * 7);
+  const day = today.getDay() || 7;
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - day + 1);
+
+  const days = [];
+  for (let d = 0; d < 7; d++) {
+    const dt = new Date(monday);
+    dt.setDate(monday.getDate() + d);
+    days.push(dt);
+  }
+
+  const weekStart = days[0].toISOString().split('T')[0];
+  const weekEnd   = days[6].toISOString().split('T')[0];
+  document.getElementById('plan-week-label').textContent =
+    `${days[0].toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} — ${days[6].toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}`;
+  document.getElementById('plan-week-sub').textContent =
+    planOffset === 0 ? 'Semaine courante' : planOffset > 0 ? `+${planOffset} semaine(s)` : `${planOffset} semaine(s)`;
+
+  const DAYS = ['Lun','Mar','Mer','Jeu','Ven','Sam','Dim'];
+  let html = '';
+  days.forEach((dt, idx) => {
+    const ds = dt.toISOString().split('T')[0];
+    const items = interventions.filter(i => i.date === ds);
+    const isToday = ds === todayStr();
+    html += `
+      <div class="day-card" ${isToday ? 'style="border-color:rgba(0,212,255,0.3)"' : ''}>
+        <div class="day-header" ${isToday ? 'style="background:rgba(0,212,255,0.08)"' : ''}>
+          <div class="day-name" ${isToday ? 'style="color:var(--accent)"' : ''}>${DAYS[idx]} ${isToday ? '· Aujourd\'hui' : ''}</div>
+          <div class="day-date">${dt.toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div>
+        </div>`;
+    if (items.length === 0) {
+      html += `<div style="padding:10px 14px;font-size:12px;color:var(--text3)">Aucune intervention</div>`;
+    } else {
+      items.forEach(i => {
+        html += `
+          <div class="card-row" onclick="openDetail('${i.id}')">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.title}</div>
+              <div style="font-size:11px;color:var(--text3);margin-top:2px">${getSite(i.site)?.name||'—'} · ${i.duration||'?'}h</div>
+            </div>
+            ${statusBadge(i.status)}
+          </div>`;
+      });
+    }
+    html += '</div>';
+  });
+  document.getElementById('planning-content').innerHTML = html;
+}
+
+// ════════════════════════════════════════════════════════════
+//  PROFILE VIEW
+// ════════════════════════════════════════════════════════════
+function renderProfile() {
+  const sel = document.getElementById('profile-tech-select');
+  sel.innerHTML = '<option value="">-- Sélectionner --</option>' +
+    techs.map(t => `<option value="${t.id}" ${t.id===activeTechId?'selected':''}>${t.first} ${t.last}</option>`).join('');
+
+  const tech = getTech(activeTechId);
+  const av = document.getElementById('profile-avatar');
+  const nm = document.getElementById('profile-name');
+  const rl = document.getElementById('profile-role');
+
+  if (tech) {
+    av.textContent = initials(tech.first, tech.last);
+    av.style.color = tech.color;
+    av.style.borderColor = tech.color;
+    av.style.background = tech.color + '20';
+    nm.textContent = tech.first + ' ' + tech.last;
+    rl.textContent = tech.role || '';
+  } else {
+    av.textContent = '?';
+    nm.textContent = 'Non sélectionné';
+    rl.textContent = '';
+  }
+
+  const myItems = interventions.filter(i => i.tech === activeTechId);
+  const myActive = myItems.filter(i => !['Terminé','Clôturé'].includes(i.status)).length;
+  const myClosed = myItems.filter(i => ['Terminé','Clôturé'].includes(i.status)).length;
+  const myUrgent = myItems.filter(i => i.priority === 'Urgent' && !['Terminé','Clôturé'].includes(i.status)).length;
+
+  document.getElementById('profile-stats').innerHTML = `
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--accent)">${myActive}</div>
+      <div class="stat-lbl">Actives</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--green)">${myClosed}</div>
+      <div class="stat-lbl">Clôturées</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--red)">${myUrgent}</div>
+      <div class="stat-lbl">Urgentes</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" style="color:var(--orange)">${myItems.length}</div>
+      <div class="stat-lbl">Total</div>
+    </div>`;
+
+  const recent = myItems.sort((a,b) => (b.date||'') > (a.date||'') ? 1 : -1).slice(0,5);
+  const recentEl = document.getElementById('profile-recent');
+  if (recent.length === 0) {
+    recentEl.innerHTML = `<div class="empty"><div class="icon">📋</div><p>Aucune intervention assignée</p></div>`;
+  } else {
+    recentEl.innerHTML = recent.map(i => interventionRow(i)).join('');
+  }
+}
+
+function changeTech() {
+  activeTechId = document.getElementById('profile-tech-select').value;
+  save('mobile_active_tech', activeTechId);
+  renderProfile();
+  updateBadges();
+}
+
+// ════════════════════════════════════════════════════════════
+//  PANEL — DETAIL INTERVENTION
+// ════════════════════════════════════════════════════════════
+function openDetail(id) {
+  const i = interventions.find(x => x.id === id);
+  if (!i) return;
+  const tech = getTech(i.tech);
+  const site = getSite(i.site);
+
+  document.getElementById('panel-title').textContent = 'Intervention';
+
+  document.getElementById('panel-body').innerHTML = `
+    <div style="margin-bottom:14px">
+      <div style="font-size:16px;font-weight:600;line-height:1.3;margin-bottom:8px">${i.title}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        ${statusBadge(i.status)} ${priorityBadge(i.priority)}
+      </div>
+    </div>
+
+    <div class="detail-row">
+      <div class="detail-block"><div class="lbl">Date</div><div class="val">${fmtDate(i.date)}</div></div>
+      <div class="detail-block"><div class="lbl">Durée</div><div class="val">${i.duration ? i.duration+'h' : '—'}</div></div>
+    </div>
+    <div class="detail-block"><div class="lbl">Site</div><div class="val">${site ? site.name : '—'}</div></div>
+    <div class="detail-block"><div class="lbl">Équipement</div><div class="val">${i.equip || '—'}</div></div>
+    <div class="detail-row">
+      <div class="detail-block"><div class="lbl">Catégorie</div><div class="val">${i.category || '—'}</div></div>
+      <div class="detail-block"><div class="lbl">Contact</div><div class="val">${i.contact || '—'}</div></div>
+    </div>
+    ${tech ? `<div class="detail-block"><div class="lbl">Technicien</div><div class="val" style="display:flex;align-items:center;gap:8px">${avatar(i.tech,24)} ${tech.first} ${tech.last}</div></div>` : ''}
+    ${i.description ? `<div class="detail-block"><div class="lbl">Description</div><div class="val" style="white-space:pre-wrap">${i.description}</div></div>` : ''}
+    ${i.resolution ? `<div class="detail-block" style="border:1px solid rgba(0,230,118,0.25)"><div class="lbl" style="color:var(--green)">Rapport de clôture</div><div class="val" style="white-space:pre-wrap">${i.resolution}</div></div>` : ''}
+
+    <div style="margin-top:16px">
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.8px;color:var(--text3);margin-bottom:10px">Changer le statut</div>
+      <div class="status-grid" id="status-grid-${i.id}"></div>
+    </div>`;
+
+  // Build status buttons
+  const statuses = getParam('status');
+  const grid = document.getElementById(`status-grid-${i.id}`);
+  grid.innerHTML = statuses.map(s => {
+    const col = STATUS_COLORS[s] || 'var(--accent)';
+    const sel = s === i.status;
+    return `<button class="status-btn ${sel?'selected':''}"
+      style="border-color:${col};${sel?`background:${col};color:#0b0f1a`:`color:${col}`}"
+      onclick="quickStatus('${i.id}','${s}')">
+      ${s}
+    </button>`;
+  }).join('');
+
+  document.getElementById('panel-footer').innerHTML = `
+    <button class="btn btn-ghost" onclick="closePanel()" style="flex:1">Fermer</button>
+    <button class="btn btn-primary" onclick="openEdit('${i.id}')" style="flex:2">✏ Modifier</button>`;
+
+  openPanel();
+}
+
+function quickStatus(id, status) {
+  const idx = interventions.findIndex(x => x.id === id);
+  if (idx < 0) return;
+  const wasClose = ['Terminé','Clôturé'].includes(interventions[idx].status);
+  interventions[idx].status = status;
+  save('fieldops_interventions', interventions);
+  toast(`Statut → ${status} ✓`);
+
+  // Refresh status buttons
+  const statuses = getParam('status');
+  const grid = document.getElementById(`status-grid-${id}`);
+  if (grid) {
+    grid.innerHTML = statuses.map(s => {
+      const col = STATUS_COLORS[s] || 'var(--accent)';
+      const sel = s === status;
+      return `<button class="status-btn ${sel?'selected':''}"
+        style="border-color:${col};${sel?`background:${col};color:#0b0f1a`:`color:${col}`}"
+        onclick="quickStatus('${id}','${s}')">
+        ${s}
+      </button>`;
+    }).join('');
+  }
+
+  // Update badge in the row
+  updateBadges();
+  const activeTab = document.querySelector('.nav-tab.active')?.id?.replace('tab-','');
+  if (activeTab === 'today') renderToday();
+  if (activeTab === 'list')  applyFilter();
+}
+
+// ════════════════════════════════════════════════════════════
+//  PANEL — EDIT / NEW
+// ════════════════════════════════════════════════════════════
+function openNew() {
+  renderForm(null);
+}
+
+function openEdit(id) {
+  renderForm(id);
+}
+
+function renderForm(id) {
+  const i = id ? interventions.find(x => x.id === id) : null;
+  const statuses   = getParam('status');
+  const priorities = getParam('priority');
+  const categories = getParam('cat');
+
+  document.getElementById('panel-title').textContent = i ? 'Modifier' : 'Nouvelle intervention';
+
+  const todayVal = todayStr();
+
+  document.getElementById('panel-body').innerHTML = `
+    <div class="form-group">
+      <label>Titre *</label>
+      <input type="text" id="fi-title" value="${i ? escHtml(i.title) : ''}" placeholder="Ex: Panne réseau salle A2" autocomplete="off">
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Priorité</label>
+        <select id="fi-priority">
+          ${priorities.map(p => `<option value="${p}" ${i?.priority===p?'selected':''}>${p}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Statut</label>
+        <select id="fi-status">
+          ${statuses.map(s => `<option value="${s}" ${i?.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Date</label>
+        <input type="date" id="fi-date" value="${i?.date || todayVal}">
+      </div>
+      <div class="form-group">
+        <label>Durée (h)</label>
+        <input type="number" id="fi-duration" value="${i?.duration||''}" placeholder="Ex: 2" min="0.5" step="0.5">
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Site</label>
+      <select id="fi-site">
+        <option value="">Non spécifié</option>
+        ${sites.map(s => `<option value="${s.id}" ${i?.site===s.id?'selected':''}>${s.name}</option>`).join('')}
+      </select>
+    </div>
+    <div class="form-group">
+      <label>Équipement</label>
+      <input type="text" id="fi-equip" value="${i ? escHtml(i.equip||'') : ''}" placeholder="Ex: Switch Cisco C9200" autocomplete="off">
+    </div>
+    <div class="form-row-2">
+      <div class="form-group">
+        <label>Catégorie</label>
+        <select id="fi-category">
+          ${categories.map(c => `<option value="${c}" ${i?.category===c?'selected':''}>${c}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Technicien</label>
+        <select id="fi-tech">
+          <option value="">Non assigné</option>
+          ${techs.map(t => `<option value="${t.id}" ${(i?.tech||activeTechId)===t.id?'selected':''}>${t.first} ${t.last}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Contact sur site</label>
+      <input type="text" id="fi-contact" value="${i ? escHtml(i.contact||'') : ''}" placeholder="Nom du demandeur">
+    </div>
+    <div class="form-group">
+      <label>Description</label>
+      <textarea id="fi-desc" placeholder="Décrivez le problème...">${i ? escHtml(i.description||'') : ''}</textarea>
+    </div>
+    ${i ? `
+    <div class="form-group">
+      <label>Rapport de clôture</label>
+      <textarea id="fi-resolution" oninput="autoCloseStatusForm(this)" placeholder="Actions effectuées, résolution...">${escHtml(i.resolution||'')}</textarea>
+    </div>` : ''}
+    ${id ? `<div style="padding-top:4px"><button class="btn btn-danger" style="width:100%" onclick="deleteIntervention('${id}')">🗑 Supprimer cette intervention</button></div>` : ''}
+    <div style="height:8px"></div>`;
+
+  document.getElementById('panel-footer').innerHTML = `
+    <button class="btn btn-ghost" onclick="closePanel()" style="flex:1">Annuler</button>
+    <button class="btn btn-primary" onclick="saveForm('${id||''}')">💾 Enregistrer</button>`;
+
+  openPanel();
+}
+
+function autoCloseStatusForm(textarea) {
+  if (textarea.value.trim()) {
+    const sel = document.getElementById('fi-status');
+    if (!sel) return;
+    const opts = Array.from(sel.options).map(o => o.value);
+    const cloture = opts.find(o => o.toLowerCase().includes('clôt') || o.toLowerCase().includes('clot')) || opts[opts.length-1];
+    sel.value = cloture;
+  }
+}
+
+function saveForm(id) {
+  const title = document.getElementById('fi-title')?.value.trim();
+  if (!title) { toast('Le titre est obligatoire', 'error'); return; }
+  const data = {
+    title,
+    site:       document.getElementById('fi-site').value,
+    equip:      document.getElementById('fi-equip').value.trim(),
+    priority:   document.getElementById('fi-priority').value,
+    status:     document.getElementById('fi-status').value,
+    tech:       document.getElementById('fi-tech').value,
+    date:       document.getElementById('fi-date').value,
+    duration:   document.getElementById('fi-duration').value,
+    category:   document.getElementById('fi-category').value,
+    contact:    document.getElementById('fi-contact').value.trim(),
+    description: document.getElementById('fi-desc').value.trim(),
+    resolution: document.getElementById('fi-resolution')?.value.trim() || '',
+  };
+
+  if (id) {
+    const idx = interventions.findIndex(x => x.id === id);
+    const wasClose = ['Terminé','Clôturé'].includes(interventions[idx].status);
+    interventions[idx] = { ...interventions[idx], ...data };
+    save('fieldops_interventions', interventions);
+    toast('Intervention mise à jour ✓');
+  } else {
+    interventions.unshift({ id: uid(), ...data, createdAt: todayStr() });
+    save('fieldops_interventions', interventions);
+    toast('Intervention créée ✓');
+  }
+
+  closePanel();
+  updateBadges();
+  const activeTab = document.querySelector('.nav-tab.active')?.id?.replace('tab-','');
+  if (activeTab === 'today')    renderToday();
+  if (activeTab === 'list')     renderList();
+  if (activeTab === 'planning') renderPlanning();
+}
+
+function deleteIntervention(id) {
+  interventions = interventions.filter(x => x.id !== id);
+  save('fieldops_interventions', interventions);
+  closePanel();
+  toast('Intervention supprimée');
+  const activeTab = document.querySelector('.nav-tab.active')?.id?.replace('tab-','');
+  if (activeTab === 'today')    renderToday();
+  if (activeTab === 'list')     renderList();
+  if (activeTab === 'planning') renderPlanning();
+  updateBadges();
+}
+
+// ════════════════════════════════════════════════════════════
+//  PANEL OPEN / CLOSE
+// ════════════════════════════════════════════════════════════
+function openPanel() {
+  document.getElementById('panel-overlay').classList.add('open');
+  setTimeout(() => document.getElementById('panel').classList.add('open'), 10);
+}
+function closePanel() {
+  document.getElementById('panel').classList.remove('open');
+  document.getElementById('panel-overlay').classList.remove('open');
+}
+
+// ════════════════════════════════════════════════════════════
+//  UTILS
+// ════════════════════════════════════════════════════════════
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ════════════════════════════════════════════════════════════
+//  INIT — attend Firebase
+// ════════════════════════════════════════════════════════════
+function reload() {
+  if (window._fbCache?.['fieldops_interventions']) interventions = window._fbCache['fieldops_interventions'];
+  if (window._fbCache?.['fieldops_techs'])         techs         = window._fbCache['fieldops_techs'];
+  if (window._fbCache?.['fieldops_sites'])         sites         = window._fbCache['fieldops_sites'];
+}
+
+function startMobileApp() {
+  reload();
+  renderToday();
+  updateBadges();
+}
+
+if (window._fbReady) {
+  startMobileApp();
+} else {
+  document.addEventListener('firebase-ready', startMobileApp, { once: true });
+}
+
+// Keyboard: close panel on back
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closePanel();
+});
+</script>
+</body>
+</html>
