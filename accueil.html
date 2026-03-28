@@ -79,6 +79,57 @@
             line-height: 1.4;
         }
 
+        /* ── DB STATS ── */
+        .db-stats {
+            width: 100%;
+            max-width: 520px;
+            margin-top: 30px;
+        }
+        .db-stats-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .db-stats-label {
+            font-size: 0.75rem;
+            opacity: 0.5;
+            letter-spacing: 0.5px;
+        }
+        .db-stats-value {
+            font-size: 0.75rem;
+            font-weight: 600;
+            opacity: 0.7;
+        }
+        .db-bar-bg {
+            width: 100%;
+            height: 8px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        .db-bar-fill {
+            height: 100%;
+            border-radius: 10px;
+            background: linear-gradient(90deg, #4ade80, #22d3ee);
+            transition: width 0.8s ease;
+            min-width: 2px;
+        }
+        .db-details {
+            display: flex;
+            justify-content: center;
+            gap: 16px;
+            margin-top: 10px;
+        }
+        .db-detail {
+            font-size: 0.68rem;
+            opacity: 0.4;
+        }
+        .db-detail span {
+            font-weight: 700;
+            opacity: 1;
+        }
+
         .footer {
             position: fixed;
             bottom: 20px;
@@ -107,7 +158,64 @@
         </a>
     </div>
 
+    <!-- ══ DB STATS ══ -->
+    <div class="db-stats">
+        <div class="db-stats-header">
+            <span class="db-stats-label">Base de données SupaBase</span>
+            <span class="db-stats-value" id="dbSize">Chargement...</span>
+        </div>
+        <div class="db-bar-bg">
+            <div class="db-bar-fill" id="dbBar" style="width: 0%"></div>
+        </div>
+        <div class="db-details" id="dbDetails"></div>
+    </div>
+
     <div class="footer">© 2026 TechLab — Kévin RICHER / Base de données @SupaBase</div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+    <script>
+    const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
+    const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    const MAX_DB = 500 * 1024 * 1024; // 500 Mo (plan gratuit Supabase)
+    const tables = ['interventions', 'techs', 'sites', 'rapports'];
+
+    async function measureTable(name) {
+        const { data, error } = await sb.from(name).select('*');
+        if (error || !data) return { name, rows: 0, bytes: 0 };
+        const bytes = new Blob([JSON.stringify(data)]).size;
+        return { name, rows: data.length, bytes };
+    }
+
+    function formatBytes(b) {
+        if (b < 1024) return b + ' o';
+        if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' Ko';
+        if (b < 1024 * 1024 * 1024) return (b / (1024 * 1024)).toFixed(2) + ' Mo';
+        return (b / (1024 * 1024 * 1024)).toFixed(3) + ' Go';
+    }
+
+    async function loadStats() {
+        const results = await Promise.all(tables.map(measureTable));
+        const totalBytes = results.reduce((s, r) => s + r.bytes, 0);
+        const totalRows = results.reduce((s, r) => s + r.rows, 0);
+        const pct = (totalBytes / MAX_DB) * 100;
+
+        document.getElementById('dbSize').textContent = formatBytes(totalBytes) + ' / 500 Mo';
+        document.getElementById('dbBar').style.width = Math.max(pct, 0.3) + '%';
+
+        // Couleur selon utilisation
+        const bar = document.getElementById('dbBar');
+        if (pct > 80) bar.style.background = 'linear-gradient(90deg, #f87171, #ef4444)';
+        else if (pct > 50) bar.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)';
+
+        document.getElementById('dbDetails').innerHTML = results.map(r =>
+            `<span class="db-detail">${r.name} : <span>${r.rows}</span> lignes</span>`
+        ).join('');
+    }
+
+    loadStats();
+    </script>
 
 </body>
 </html>
