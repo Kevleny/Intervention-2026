@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="light">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
@@ -13,17 +13,60 @@
     const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
     const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // Restore theme before render to avoid flash
+    (function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
     </script>
 
     <style>
+        /* ── THEMES ── */
+        :root, [data-theme="light"] {
+            --bg: #eef2f7;
+            --text: #1a202c;
+            --text-sub: #64748b;
+            --card-bg: #ffffff;
+            --card-border: #eef2f7;
+            --input-bg: #f8fafc;
+            --input-border: #e2e8f0;
+            --input-focus-bg: #fff;
+            --accent: #1a3a5c;
+            --accent2: #2563a8;
+            --modal-bg: #f0f4f8;
+            --hist-panel-bg: #f0f4f8;
+            --hist-card-bg: #ffffff;
+            --hist-border: #eef2f7;
+            --shadow: rgba(0,0,0,0.08);
+            --toast-bg: #1e293b;
+            --email-bg: #ffffff;
+        }
+        [data-theme="dark"] {
+            --bg: #0f172a;
+            --text: #e2e8f0;
+            --text-sub: #94a3b8;
+            --card-bg: #1e293b;
+            --card-border: #334155;
+            --input-bg: #0f172a;
+            --input-border: #334155;
+            --input-focus-bg: #1e293b;
+            --accent: #60a5fa;
+            --accent2: #3b82f6;
+            --modal-bg: #0f172a;
+            --hist-panel-bg: #0f172a;
+            --hist-card-bg: #1e293b;
+            --hist-border: #334155;
+            --shadow: rgba(0,0,0,0.3);
+            --toast-bg: #334155;
+            --email-bg: #1e293b;
+        }
+
         /* ── BASE ── */
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #eef2f7;
-            color: #1a202c;
+            background: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             padding-bottom: 40px;
+            transition: background 0.3s, color 0.3s;
         }
 
         /* ── APP HEADER ── */
@@ -54,6 +97,19 @@
             white-space: nowrap;
         }
         .btn-historique:hover, .btn-historique:active { background: rgba(255,255,255,0.25); }
+        .btn-theme {
+            background: rgba(255,255,255,0.15);
+            border: 1.5px solid rgba(255,255,255,0.35);
+            color: white;
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: flex; align-items: center; justify-content: center;
+        }
+        .btn-theme:hover { background: rgba(255,255,255,0.25); }
+        .header-actions { display: flex; gap: 8px; align-items: center; }
 
         /* ── HISTORIQUE PANEL ── */
         .historique-overlay {
@@ -63,7 +119,7 @@
         }
         .historique-overlay.show { display: block; }
         .historique-panel {
-            background: #f0f4f8; margin: 0 auto;
+            background: var(--hist-panel-bg); margin: 0 auto;
             width: 100%; max-width: 680px;
             min-height: 100vh; padding: 16px;
         }
@@ -71,29 +127,66 @@
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 14px;
         }
-        .historique-topbar strong { font-size: 0.95rem; color: #1a3a5c; }
+        .historique-topbar strong { font-size: 0.95rem; color: var(--accent); }
         .historique-empty {
             text-align: center; padding: 40px 20px;
-            color: #94a3b8; font-size: 0.9rem;
+            color: var(--text-sub); font-size: 0.9rem;
         }
+
+        /* ── FILTRES ── */
+        .hist-filters {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 14px;
+            padding: 12px;
+            background: var(--hist-card-bg);
+            border-radius: 12px;
+            box-shadow: 0 1px 4px var(--shadow);
+        }
+        .hist-filters input,
+        .hist-filters select {
+            width: 100%;
+            padding: 9px 10px;
+            border: 1.5px solid var(--input-border);
+            border-radius: 8px;
+            font-size: 0.8rem;
+            color: var(--text);
+            background: var(--input-bg);
+            -webkit-appearance: none;
+        }
+        .hist-filters input:focus,
+        .hist-filters select:focus {
+            outline: none;
+            border-color: var(--accent2);
+        }
+        .hist-filter-full { grid-column: 1 / -1; }
+        .hist-filter-count {
+            grid-column: 1 / -1;
+            text-align: center;
+            font-size: 0.72rem;
+            color: var(--text-sub);
+            padding-top: 4px;
+        }
+
         .hist-card {
-            background: white; border-radius: 12px;
+            background: var(--hist-card-bg); border-radius: 12px;
             padding: 14px 16px; margin-bottom: 10px;
-            box-shadow: 0 1px 5px rgba(0,0,0,0.07);
+            box-shadow: 0 1px 5px var(--shadow);
             cursor: pointer; transition: box-shadow 0.2s;
         }
-        .hist-card:active { box-shadow: 0 2px 10px rgba(0,0,0,0.15); }
+        .hist-card:active { box-shadow: 0 2px 10px var(--shadow); }
         .hist-card-header {
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 6px;
         }
-        .hist-card-site { font-weight: 700; font-size: 0.92rem; color: #1a3a5c; }
-        .hist-card-date { font-size: 0.75rem; color: #94a3b8; font-weight: 500; }
-        .hist-card-meta { font-size: 0.78rem; color: #64748b; line-height: 1.5; }
+        .hist-card-site { font-weight: 700; font-size: 0.92rem; color: var(--accent); }
+        .hist-card-date { font-size: 0.75rem; color: var(--text-sub); font-weight: 500; }
+        .hist-card-meta { font-size: 0.78rem; color: var(--text-sub); line-height: 1.5; }
         .hist-card-meta span { margin-right: 12px; }
         .hist-card-actions {
             display: flex; gap: 8px; margin-top: 10px;
-            border-top: 1px solid #eef2f7; padding-top: 10px;
+            border-top: 1px solid var(--hist-border); padding-top: 10px;
         }
         .hist-btn {
             flex: 1; padding: 8px; border-radius: 8px;
@@ -108,19 +201,19 @@
         .container { padding: 14px; max-width: 620px; margin: 0 auto; }
 
         .card {
-            background: white;
+            background: var(--card-bg);
             border-radius: 14px;
             padding: 16px;
             margin-bottom: 14px;
-            box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+            box-shadow: 0 1px 6px var(--shadow);
         }
         .card-title {
             font-size: 0.93rem;
             font-weight: 700;
-            color: #1a3a5c;
+            color: var(--accent);
             margin-bottom: 14px;
             padding-bottom: 10px;
-            border-bottom: 2px solid #eef2f7;
+            border-bottom: 2px solid var(--card-border);
         }
 
         .field { margin-bottom: 12px; }
@@ -130,7 +223,7 @@
             display: block;
             font-size: 0.76rem;
             font-weight: 600;
-            color: #64748b;
+            color: var(--text-sub);
             margin-bottom: 5px;
             text-transform: uppercase;
             letter-spacing: 0.4px;
@@ -141,18 +234,18 @@
         input[type="time"] {
             width: 100%;
             padding: 11px 13px;
-            border: 1.5px solid #e2e8f0;
+            border: 1.5px solid var(--input-border);
             border-radius: 9px;
             font-size: 0.94rem;
-            color: #1a202c;
-            background: #f8fafc;
+            color: var(--text);
+            background: var(--input-bg);
             -webkit-appearance: none;
             transition: border-color 0.2s, background 0.2s;
         }
         input:focus {
             outline: none;
-            border-color: #2563a8;
-            background: #fff;
+            border-color: var(--accent2);
+            background: var(--input-focus-bg);
             box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
         }
 
@@ -173,20 +266,20 @@
         .type-btn {
             flex: 1;
             padding: 10px 4px;
-            border: 2px solid #e2e8f0;
+            border: 2px solid var(--input-border);
             border-radius: 10px;
-            background: #f8fafc;
+            background: var(--input-bg);
             font-size: 0.81rem;
             font-weight: 500;
             cursor: pointer;
             text-align: center;
-            color: #64748b;
+            color: var(--text-sub);
             transition: all 0.2s;
         }
         .type-btn.active {
-            border-color: #2563a8;
-            background: #eff6ff;
-            color: #1a3a5c;
+            border-color: var(--accent2);
+            background: var(--input-focus-bg);
+            color: var(--accent);
             font-weight: 700;
             box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
         }
@@ -205,10 +298,10 @@
         .btn-add {
             width: 100%;
             padding: 9px;
-            border: 2px dashed #cbd5e1;
+            border: 2px dashed var(--input-border);
             border-radius: 9px;
             background: transparent;
-            color: #94a3b8;
+            color: var(--text-sub);
             font-size: 0.87rem;
             font-weight: 500;
             cursor: pointer;
@@ -232,8 +325,8 @@
         .btn-validate:active { opacity: 0.85; }
         .btn-reset {
             width: 100%; padding: 12px;
-            background: transparent; color: #94a3b8;
-            border: 2px solid #e2e8f0; border-radius: 12px;
+            background: transparent; color: var(--text-sub);
+            border: 2px solid var(--input-border); border-radius: 12px;
             font-size: 0.9rem; font-weight: 600; cursor: pointer;
             margin-bottom: 32px; transition: all 0.2s;
         }
@@ -246,7 +339,7 @@
         }
         .modal.show { display: block; }
         .modal-content {
-            background: #f0f4f8; margin: 0 auto;
+            background: var(--modal-bg); margin: 0 auto;
             width: 100%; max-width: 680px;
             min-height: 100vh; padding: 16px;
         }
@@ -256,19 +349,19 @@
             display: flex; justify-content: space-between; align-items: center;
             margin-bottom: 14px;
         }
-        .modal-topbar strong { font-size: 0.95rem; color: #1a3a5c; }
+        .modal-topbar strong { font-size: 0.95rem; color: var(--accent); }
         .btn-close {
-            background: white; border: none; border-radius: 8px;
+            background: var(--card-bg); border: none; border-radius: 8px;
             padding: 8px 14px; cursor: pointer;
-            font-size: 0.85rem; font-weight: 600; color: #64748b;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.1);
+            font-size: 0.85rem; font-weight: 600; color: var(--text-sub);
+            box-shadow: 0 1px 4px var(--shadow);
         }
 
         /* ── STICKY BOTTOM BUTTONS ── */
         .modal-actions {
             display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
             position: sticky; bottom: 0;
-            background: #f0f4f8;
+            background: var(--modal-bg);
             padding: 10px 0 6px;
             margin-top: 12px;
         }
@@ -276,8 +369,8 @@
             padding: 12px 6px; border: none; border-radius: 10px;
             font-size: 0.82rem; font-weight: 700; cursor: pointer;
         }
-        .btn-copy  { background: white; color: #1a3a5c; border: 2px solid #dbeafe; }
-        .btn-print { background: white; color: #1a3a5c; border: 2px solid #dbeafe; }
+        .btn-copy  { background: var(--card-bg); color: var(--accent); border: 2px solid var(--input-border); }
+        .btn-print { background: var(--card-bg); color: var(--accent); border: 2px solid var(--input-border); }
         .btn-share {
             background: linear-gradient(135deg, #1a3a5c, #2563a8);
             color: white;
@@ -392,26 +485,26 @@
         }
         .email-overlay.show { display: flex; }
         .email-box {
-            background: white; border-radius: 16px;
+            background: var(--email-bg); border-radius: 16px;
             padding: 22px; width: 100%; max-width: 400px;
             box-shadow: 0 8px 30px rgba(0,0,0,0.25);
         }
-        .email-box h3 { font-size: 1rem; color: #1a3a5c; margin-bottom: 6px; }
-        .email-box p  { font-size: 0.8rem; color: #64748b; margin-bottom: 16px; }
+        .email-box h3 { font-size: 1rem; color: var(--accent); margin-bottom: 6px; }
+        .email-box p  { font-size: 0.8rem; color: var(--text-sub); margin-bottom: 16px; }
         .email-box input[type="email"] {
             width: 100%; padding: 12px 14px;
-            border: 1.5px solid #e2e8f0; border-radius: 9px;
-            font-size: 0.95rem; color: #1a202c; background: #f8fafc;
+            border: 1.5px solid var(--input-border); border-radius: 9px;
+            font-size: 0.95rem; color: var(--text); background: var(--input-bg);
             margin-bottom: 14px; -webkit-appearance: none;
         }
         .email-box input[type="email"]:focus {
-            outline: none; border-color: #2563a8; background: white;
+            outline: none; border-color: var(--accent2); background: var(--input-focus-bg);
             box-shadow: 0 0 0 3px rgba(37,99,168,0.1);
         }
         .email-box-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .btn-email-cancel {
-            padding: 12px; border: 2px solid #e2e8f0; border-radius: 9px;
-            background: white; color: #64748b; font-size: 0.9rem;
+            padding: 12px; border: 2px solid var(--input-border); border-radius: 9px;
+            background: var(--card-bg); color: var(--text-sub); font-size: 0.9rem;
             font-weight: 600; cursor: pointer;
         }
         .btn-email-send {
@@ -425,7 +518,7 @@
         .toast {
             position: fixed; bottom: 80px; left: 50%;
             transform: translateX(-50%);
-            background: #1e293b; color: white;
+            background: var(--toast-bg); color: white;
             padding: 10px 22px; border-radius: 20px;
             font-size: 0.87rem; font-weight: 500;
             z-index: 2000; opacity: 0;
@@ -442,7 +535,10 @@
         <h1>📝 Rapport d'Intervention</h1>
         <p>IMP360 — IT Management Project</p>
     </div>
-    <button class="btn-historique" onclick="ouvrirHistorique()">📚 Historique</button>
+    <div class="header-actions">
+        <button class="btn-historique" onclick="ouvrirHistorique()">📚 Historique</button>
+        <button class="btn-theme" id="themeToggle" onclick="toggleTheme()" title="Changer de thème">☀️</button>
+    </div>
 </header>
 
 <!-- ══ PANNEAU HISTORIQUE ══ -->
@@ -452,6 +548,22 @@
             <strong>📚 Historique des rapports</strong>
             <button class="btn-close" onclick="fermerHistorique()">✕ Fermer</button>
         </div>
+
+        <!-- Filtres -->
+        <div class="hist-filters">
+            <input type="text" id="filtSite" placeholder="🔍 Filtrer par site..." oninput="appliquerFiltres()">
+            <input type="text" id="filtTech" placeholder="👤 Technicien..." oninput="appliquerFiltres()">
+            <input type="date" id="filtDateDe" onchange="appliquerFiltres()">
+            <input type="date" id="filtDateA" onchange="appliquerFiltres()">
+            <select id="filtType" class="hist-filter-full" onchange="appliquerFiltres()">
+                <option value="">Tous les types</option>
+                <option value="Régie">Régie</option>
+                <option value="Ticket">Ticket</option>
+                <option value="Prestation(s)">Prestation(s)</option>
+            </select>
+            <div class="hist-filter-count" id="filtCount"></div>
+        </div>
+
         <div id="historiqueList">
             <div class="historique-empty">Chargement...</div>
         </div>
@@ -1022,9 +1134,28 @@ ${docHTML}
     }
 
     /* ══════════════════════════════════════════════════════
+       THEME TOGGLE
+    ══════════════════════════════════════════════════════ */
+    function toggleTheme() {
+        const html = document.documentElement;
+        const isDark = html.getAttribute('data-theme') === 'dark';
+        const newTheme = isDark ? 'light' : 'dark';
+        html.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+        document.getElementById('themeToggle').textContent = isDark ? '☀️' : '🌙';
+    }
+    (function restoreTheme() {
+        const saved = localStorage.getItem('theme');
+        if (saved) document.documentElement.setAttribute('data-theme', saved);
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        document.getElementById('themeToggle').textContent = isDark ? '🌙' : '☀️';
+    })();
+
+    /* ══════════════════════════════════════════════════════
        HISTORIQUE — Charger / Afficher / Modifier / Supprimer
     ══════════════════════════════════════════════════════ */
     let editingRapportId = null;
+    let allRapports = [];
 
     async function ouvrirHistorique() {
         document.getElementById('historiqueOverlay').classList.add('show');
@@ -1046,12 +1177,42 @@ ${docHTML}
             return;
         }
 
-        if (!data || data.length === 0) {
+        allRapports = data || [];
+        appliquerFiltres();
+    }
+
+    function appliquerFiltres() {
+        const filtSite = (document.getElementById('filtSite').value || '').trim().toLowerCase();
+        const filtTech = (document.getElementById('filtTech').value || '').trim().toLowerCase();
+        const filtDateDe = document.getElementById('filtDateDe').value || '';
+        const filtDateA = document.getElementById('filtDateA').value || '';
+        const filtType = document.getElementById('filtType').value || '';
+
+        let filtered = allRapports.filter(r => {
+            if (filtSite && !(r.site || '').toLowerCase().includes(filtSite)) return false;
+            if (filtTech && !(r.technicien || '').toLowerCase().includes(filtTech)) return false;
+            if (filtType && r.type_intervention !== filtType) return false;
+            if (filtDateDe && r.date && r.date < filtDateDe) return false;
+            if (filtDateA && r.date && r.date > filtDateA) return false;
+            return true;
+        });
+
+        const countEl = document.getElementById('filtCount');
+        countEl.textContent = filtered.length + ' rapport' + (filtered.length > 1 ? 's' : '') + ' sur ' + allRapports.length;
+
+        const container = document.getElementById('historiqueList');
+
+        if (allRapports.length === 0) {
             container.innerHTML = '<div class="historique-empty">Aucun rapport sauvegardé</div>';
             return;
         }
 
-        container.innerHTML = data.map(r => {
+        if (filtered.length === 0) {
+            container.innerHTML = '<div class="historique-empty">Aucun rapport ne correspond aux filtres</div>';
+            return;
+        }
+
+        container.innerHTML = filtered.map(r => {
             const dateAff = r.date ? r.date.split('-').reverse().join('/') : '—';
             return `
             <div class="hist-card">
@@ -1064,7 +1225,7 @@ ${docHTML}
                     <span>${escHTML(r.technicien || '')}</span>
                     <span>${r.heure_debut || ''} → ${r.heure_fin || ''}</span>
                 </div>
-                <div class="hist-card-meta" style="margin-top:4px;color:#94a3b8;">
+                <div class="hist-card-meta" style="margin-top:4px;color:var(--text-sub);">
                     ${escHTML(r.motif || '')}
                 </div>
                 <div class="hist-card-actions">

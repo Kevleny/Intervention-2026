@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', bootstrap);
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
-:root {
+:root, [data-theme="dark"] {
   --bg:      #0b0f1a;
   --bg2:     #111827;
   --bg3:     #1a2235;
@@ -142,6 +142,21 @@ document.addEventListener('DOMContentLoaded', bootstrap);
   --text3:   #4a5a6e;
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-bot: env(safe-area-inset-bottom, 0px);
+}
+[data-theme="light"] {
+  --bg:      #eef2f7;
+  --bg2:     #ffffff;
+  --bg3:     #f1f5f9;
+  --bg4:     #e2e8f0;
+  --border:  #cbd5e1;
+  --accent:  #2563a8;
+  --green:   #16a34a;
+  --orange:  #d97706;
+  --red:     #dc2626;
+  --purple:  #7c3aed;
+  --text:    #1a202c;
+  --text2:   #475569;
+  --text3:   #94a3b8;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -723,7 +738,7 @@ html, body {
   <div id="topbar">
     <div id="topbar-logo">⬡ TechLab</div>
     <div id="topbar-title">Terrain</div>
-    <div id="topbar-action"></div>
+    <button id="topbar-action" onclick="toggleTheme()" style="flex-shrink:0;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--bg3);border:1px solid var(--border);border-radius:50%;color:var(--text);font-size:16px;cursor:pointer">☀️</button>
   </div>
 
   <!-- CONTENT AREA -->
@@ -829,6 +844,27 @@ html, body {
 <div id="toast"></div>
 
 <script>
+// ════════════════════════════════════════════════════════════
+//  THEME TOGGLE
+// ════════════════════════════════════════════════════════════
+(function restoreTheme() {
+  var saved = localStorage.getItem('theme');
+  if (saved) document.documentElement.setAttribute('data-theme', saved);
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  var btn = document.getElementById('topbar-action');
+  if (btn) btn.textContent = isDark ? '☀️' : '🌙';
+})();
+
+function toggleTheme() {
+  var html = document.documentElement;
+  var isDark = html.getAttribute('data-theme') === 'dark';
+  var newTheme = isDark ? 'light' : 'dark';
+  html.setAttribute('data-theme', newTheme);
+  localStorage.setItem('theme', newTheme);
+  var btn = document.getElementById('topbar-action');
+  if (btn) btn.textContent = isDark ? '🌙' : '☀️';
+}
+
 // ════════════════════════════════════════════════════════════
 //  DATA STORE — Firebase (cache local synchronisé)
 // ════════════════════════════════════════════════════════════
