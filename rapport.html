@@ -1227,7 +1227,7 @@ ${docHTML}
                 <div class="hist-card-meta">
                     <span>${escHTML(r.type_intervention || '')}</span>
                     <span>${escHTML(r.technicien || '')}</span>
-                    <span>${r.heure_debut || ''} → ${r.heure_fin || ''}</span>
+                    <span>${escHTML(r.heure_debut || '')} → ${escHTML(r.heure_fin || '')}</span>
                 </div>
                 <div class="hist-card-meta" style="margin-top:4px;color:var(--text-sub);">
                     ${escHTML(r.motif || '')}
