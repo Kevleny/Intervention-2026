@@ -15,6 +15,10 @@
     const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     // Restore theme before render to avoid flash
     (function(){var t=localStorage.getItem('theme');if(t)document.documentElement.setAttribute('data-theme',t);})();
+    // Auth guard
+    sb.auth.getSession().then(({ data: { session } }) => {
+        if (!session) window.location.href = 'accueil.html';
+    });
     </script>
 
     <style>

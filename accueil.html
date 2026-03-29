@@ -356,6 +356,116 @@
             opacity: 1;
         }
 
+        /* ── LOGIN FORM ── */
+        .auth-box {
+            width: 100%;
+            max-width: 380px;
+            background: var(--card-bg);
+            border: 1.5px solid var(--card-border);
+            border-radius: 18px;
+            padding: 30px 24px;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .auth-box h2 {
+            font-size: 1.1rem;
+            font-weight: 700;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+        .auth-box .auth-sub {
+            font-size: 0.78rem;
+            opacity: 0.5;
+            text-align: center;
+            margin-bottom: 22px;
+        }
+        .auth-field {
+            margin-bottom: 14px;
+        }
+        .auth-field label {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 600;
+            opacity: 0.5;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 5px;
+        }
+        .auth-field input {
+            width: 100%;
+            padding: 12px 14px;
+            background: var(--search-bg);
+            border: 1.5px solid var(--search-border);
+            border-radius: 10px;
+            color: var(--text);
+            font-size: 0.9rem;
+            outline: none;
+            transition: all 0.2s;
+        }
+        .auth-field input:focus {
+            border-color: var(--card-hover-border);
+            box-shadow: 0 0 0 3px rgba(37,99,168,0.15);
+        }
+        .auth-btn {
+            width: 100%;
+            padding: 13px;
+            background: linear-gradient(135deg, #1a3a5c, #2563a8);
+            color: white;
+            border: none;
+            border-radius: 11px;
+            font-size: 0.92rem;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 6px;
+            transition: opacity 0.2s;
+        }
+        .auth-btn:active { opacity: 0.85; }
+        .auth-toggle {
+            text-align: center;
+            margin-top: 16px;
+            font-size: 0.78rem;
+            opacity: 0.5;
+        }
+        .auth-toggle a {
+            color: var(--text);
+            font-weight: 600;
+            opacity: 1;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+        .auth-error {
+            background: rgba(220,38,38,0.15);
+            color: #f87171;
+            padding: 8px 12px;
+            border-radius: 8px;
+            font-size: 0.78rem;
+            margin-bottom: 12px;
+            display: none;
+            text-align: center;
+        }
+        .auth-error.show { display: block; }
+
+        /* ── LOGOUT BTN ── */
+        .btn-logout {
+            background: rgba(220,38,38,0.15);
+            border: 1.5px solid rgba(220,38,38,0.3);
+            color: #f87171;
+            padding: 8px 14px;
+            border-radius: 9px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn-logout:hover { background: rgba(220,38,38,0.25); }
+        .user-info {
+            font-size: 0.72rem;
+            opacity: 0.5;
+            margin-right: 10px;
+        }
+
+        .hidden { display: none !important; }
+
         .footer {
             position: fixed;
             bottom: 20px;
@@ -385,14 +495,55 @@
 <!-- Topbar -->
 <div class="topbar">
     <div class="clock" id="clock"></div>
-    <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Changer de thème">
-        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
-        </svg>
-    </button>
+    <div style="display:flex;align-items:center;gap:8px">
+        <span class="user-info" id="userInfo"></span>
+        <button class="btn-logout hidden" id="btnLogout" onclick="logout()">Déconnexion</button>
+        <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" title="Changer de thème">
+            <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+            </svg>
+        </button>
+    </div>
 </div>
 
-<div class="content">
+<!-- ══ LOGIN FORM ══ -->
+<div class="content" id="authSection">
+    <div class="logo">
+        <svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5" opacity="0.9"/>
+            <polygon points="50,18 80,35 80,65 50,82 20,65 20,35" opacity="0.4"/>
+            <circle cx="50" cy="50" r="10" fill="currentColor" opacity="0.6"/>
+        </svg>
+    </div>
+    <div class="title">TechLab</div>
+    <div class="subtitle">By Kévin RICHER</div>
+
+    <div class="auth-box">
+        <h2 id="authTitle">Connexion</h2>
+        <p class="auth-sub" id="authSub">Connectez-vous pour accéder à vos outils</p>
+        <div class="auth-error" id="authError"></div>
+        <div class="auth-field">
+            <label>Email</label>
+            <input type="email" id="authEmail" placeholder="votre@email.com" autocomplete="email">
+        </div>
+        <div class="auth-field">
+            <label>Mot de passe</label>
+            <input type="password" id="authPassword" placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div class="auth-field hidden" id="authConfirmField">
+            <label>Confirmer le mot de passe</label>
+            <input type="password" id="authConfirm" placeholder="••••••••">
+        </div>
+        <button class="auth-btn" id="authBtn" onclick="handleAuth()">Se connecter</button>
+        <div class="auth-toggle">
+            <span id="authToggleText">Pas encore de compte ?</span>
+            <a id="authToggleLink" onclick="toggleAuthMode()">Créer un compte</a>
+        </div>
+    </div>
+</div>
+
+<!-- ══ MAIN CONTENT (hidden until auth) ══ -->
+<div class="content hidden" id="mainSection">
 
     <!-- Logo animé SVG -->
     <div class="logo">
@@ -479,6 +630,98 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
     }
 })();
 
+/* ══ AUTH ══ */
+let isRegisterMode = false;
+
+async function checkSession() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+        showApp(session.user);
+    } else {
+        document.getElementById('authSection').classList.remove('hidden');
+        document.getElementById('mainSection').classList.add('hidden');
+    }
+}
+
+function showApp(user) {
+    document.getElementById('authSection').classList.add('hidden');
+    document.getElementById('mainSection').classList.remove('hidden');
+    document.getElementById('btnLogout').classList.remove('hidden');
+    document.getElementById('userInfo').textContent = user.email;
+    loadSearchData();
+    loadStats();
+}
+
+function toggleAuthMode() {
+    isRegisterMode = !isRegisterMode;
+    document.getElementById('authTitle').textContent = isRegisterMode ? 'Créer un compte' : 'Connexion';
+    document.getElementById('authSub').textContent = isRegisterMode ? 'Remplissez les champs pour vous inscrire' : 'Connectez-vous pour accéder à vos outils';
+    document.getElementById('authBtn').textContent = isRegisterMode ? "S'inscrire" : 'Se connecter';
+    document.getElementById('authToggleText').textContent = isRegisterMode ? 'Déjà un compte ?' : 'Pas encore de compte ?';
+    document.getElementById('authToggleLink').textContent = isRegisterMode ? 'Se connecter' : 'Créer un compte';
+    document.getElementById('authConfirmField').classList.toggle('hidden', !isRegisterMode);
+    document.getElementById('authError').classList.remove('show');
+}
+
+async function handleAuth() {
+    const email = document.getElementById('authEmail').value.trim();
+    const password = document.getElementById('authPassword').value;
+    const errorEl = document.getElementById('authError');
+    errorEl.classList.remove('show');
+
+    if (!email || !password) {
+        errorEl.textContent = 'Veuillez remplir tous les champs';
+        errorEl.classList.add('show');
+        return;
+    }
+
+    if (isRegisterMode) {
+        const confirm = document.getElementById('authConfirm').value;
+        if (password !== confirm) {
+            errorEl.textContent = 'Les mots de passe ne correspondent pas';
+            errorEl.classList.add('show');
+            return;
+        }
+        if (password.length < 6) {
+            errorEl.textContent = 'Le mot de passe doit contenir au moins 6 caractères';
+            errorEl.classList.add('show');
+            return;
+        }
+        const { data, error } = await sb.auth.signUp({ email, password });
+        if (error) {
+            errorEl.textContent = error.message;
+            errorEl.classList.add('show');
+            return;
+        }
+        showApp(data.user);
+    } else {
+        const { data, error } = await sb.auth.signInWithPassword({ email, password });
+        if (error) {
+            errorEl.textContent = 'Email ou mot de passe incorrect';
+            errorEl.classList.add('show');
+            return;
+        }
+        showApp(data.user);
+    }
+}
+
+async function logout() {
+    await sb.auth.signOut();
+    document.getElementById('authSection').classList.remove('hidden');
+    document.getElementById('mainSection').classList.add('hidden');
+    document.getElementById('btnLogout').classList.add('hidden');
+    document.getElementById('userInfo').textContent = '';
+    document.getElementById('authEmail').value = '';
+    document.getElementById('authPassword').value = '';
+    document.getElementById('authConfirm').value = '';
+}
+
+// Enter key to submit
+document.getElementById('authPassword').addEventListener('keydown', e => { if (e.key === 'Enter') handleAuth(); });
+document.getElementById('authEmail').addEventListener('keydown', e => { if (e.key === 'Enter') handleAuth(); });
+
+checkSession();
+
 /* ══ HORLOGE ══ */
 function updateClock() {
     const now = new Date();
@@ -541,7 +784,6 @@ async function loadSearchData() {
     }));
     searchData = [...interventions, ...rapports, ...sites];
 }
-loadSearchData();
 
 const searchInput = document.getElementById('searchInput');
 const searchResults = document.getElementById('searchResults');
@@ -610,7 +852,7 @@ async function loadStats() {
     ).join('');
 }
 
-loadStats();
+// loadStats and loadSearchData are called from showApp() after auth
 </script>
 
 </body>

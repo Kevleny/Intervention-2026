@@ -18,6 +18,11 @@ const SUPABASE_URL = 'https://ttuisauvkjqldkmejgtg.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InR0dWlzYXV2a2pxbGRrbWVqZ3RnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQzNjQwOTYsImV4cCI6MjA4OTk0MDA5Nn0.aKikyVTGl6HVSVrKngGA-LR5VMMiTg37DFwJ0V7GW0A';
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+// Auth guard
+sb.auth.getSession().then(({ data: { session } }) => {
+  if (!session) window.location.href = 'accueil.html';
+});
+
 window._fbCache = window._fbCache || {};
 
 function keyToTable(key) {
